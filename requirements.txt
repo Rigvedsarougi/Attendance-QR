@@ -16,4 +16,4 @@ plotly
 requests
 streamlit-js-eval
 qrcode
-opencv-python-headless==4.5.1.48
+opencv-python-headless
