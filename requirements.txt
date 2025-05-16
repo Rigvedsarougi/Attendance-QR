@@ -1,11 +1,11 @@
-streamlit>=1.28.0
-streamlit-gsheets>=0.1.0
-pandas>=1.5.0
-qrcode>=7.4.2
-opencv-python-headless>=4.6.0  # Headless version for server use
-pyzbar>=0.1.9
-Pillow>=9.3.0
-numpy>=1.23.5
-pytz>=2022.7  # For timezone handling
-gspread>=5.7.0  # Google Sheets API
-oauth2client>=4.1.3  # For Google Sheets authentication
+streamlit
+streamlit-gsheets
+pandas
+qrcode
+opencv-python-headless
+pyzbar
+Pillow
+numpy
+pytz
+gspread
+oauth2client
