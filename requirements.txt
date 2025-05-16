@@ -1,0 +1,17 @@
+streamlit
+st-gsheets-connection
+gspread
+streamlit
+google-auth
+pandas
+fpdf
+pandas
+PyPDF2
+pdfplumber
+plotly
+numpy
+reportlab
+geocoder
+plotly
+requests
+streamlit-js-eval
