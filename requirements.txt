@@ -17,3 +17,4 @@ requests
 streamlit-js-eval
 qrcode
 opencv-python-headless
+timedelta
