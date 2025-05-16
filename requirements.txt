@@ -2,7 +2,7 @@ streamlit
 streamlit-gsheets
 pandas
 qrcode
-opencv-python
+opencv
 pyzbar
 pytz
 Pillow
