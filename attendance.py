@@ -7,7 +7,7 @@ import pytz
 import os
 import time
 from PIL import Image
-from opencv-python-headless import cv2
+import cv2
 import numpy as np
 
 # Initialize Google Sheets connection
