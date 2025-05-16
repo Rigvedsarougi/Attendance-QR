@@ -16,3 +16,4 @@ plotly
 requests
 streamlit-js-eval
 qrcode
+cv2
