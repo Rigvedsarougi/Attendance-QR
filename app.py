@@ -12,14 +12,6 @@ from dateutil.relativedelta import relativedelta
 # Initialize Google Sheets connection
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# Set page config for better mobile experience
-st.set_page_config(
-    page_title="Employee Portal",
-    page_icon="👨‍💼",
-    layout="centered",
-    initial_sidebar_state="collapsed"
-)
-
 def get_ist_time():
     """Get current time in Indian Standard Time (IST)"""
     utc_now = datetime.now(pytz.utc)
@@ -45,101 +37,32 @@ def display_login_header():
         </div>
         """, unsafe_allow_html=True)
 
-# Custom CSS for smoother UI
-custom_css = """
-<style>
-    /* Hide Streamlit default UI elements */
+# Hide Streamlit default UI elements
+hide_streamlit_style = """
+    <style>
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     .stActionButton > button[title="Open source on GitHub"] {visibility: hidden;}
     header {visibility: hidden;}
-    
-    /* Smooth transitions */
-    .stButton>button {
-        transition: all 0.3s ease;
-    }
-    .stButton>button:hover {
-        transform: scale(1.02);
-        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-    }
-    
-    /* Card styling */
-    .card {
-        padding: 1.5rem;
-        border-radius: 0.5rem;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        margin-bottom: 1.5rem;
-        transition: all 0.3s ease;
-        border: 1px solid #e0e0e0;
-    }
-    .card:hover {
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    }
-    
-    /* Back button styling */
-    .back-button {
-        position: fixed;
-        bottom: 20px;
-        left: 20px;
-        z-index: 1000;
-        background-color: #f0f2f6;
-        border-radius: 50%;
-        width: 50px;
-        height: 50px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        transition: all 0.3s ease;
-    }
-    .back-button:hover {
-        background-color: #e0e2e6;
-        transform: scale(1.05);
-    }
-    
-    /* Spinner animation */
-    @keyframes spin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
-    }
-    .spinner {
-        animation: spin 1s linear infinite;
-        margin: 0 auto;
-        display: block;
-    }
-    
-    /* Input field focus effects */
-    .stTextInput>div>div>input:focus, 
-    .stTextArea>div>div>textarea:focus,
-    .stSelectbox>div>div>select:focus {
-        border-color: #4a90e2 !important;
-        box-shadow: 0 0 0 2px rgba(74,144,226,0.2) !important;
-    }
-    
-    /* Tab styling */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 0;
-    }
-    .stTabs [data-baseweb="tab"] {
-        padding: 0.5rem 1rem;
-        flex: 1;
-        text-align: center;
-        transition: all 0.3s ease;
-    }
-    .stTabs [aria-selected="true"] {
-        background-color: #f0f2f6;
-        font-weight: bold;
-    }
-    
-    /* Responsive adjustments */
-    @media (max-width: 768px) {
-        .col-card {
-            margin-bottom: 1rem;
-        }
-    }
-</style>
+    </style>
 """
-st.markdown(custom_css, unsafe_allow_html=True)
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+
+hide_footer_style = """
+    <style>
+    footer {
+        visibility: hidden;
+    }
+    footer:after {
+        content: '';
+        display: none;
+    }
+    .css-15tx938.e8zbici2 {  /* This class targets the footer in some Streamlit builds */
+        display: none !important;
+    }
+    </style>
+"""
+st.markdown(hide_footer_style, unsafe_allow_html=True)
 
 @st.cache_data(ttl=300)  # Cache for 5 minutes
 def load_gsheet_data():
@@ -563,12 +486,8 @@ def resources_page():
     # Display each resource in a card-like format
     for resource in resources:
         with st.container():
-            st.markdown(f"""
-            <div class="card">
-                <h3>{resource["name"]}</h3>
-                <p>{resource["description"]}</p>
-            </div>
-            """, unsafe_allow_html=True)
+            st.subheader(resource["name"])
+            st.markdown(resource["description"])
             
             # Check if file exists
             if os.path.exists(resource["file_path"]):
@@ -582,6 +501,8 @@ def resources_page():
                     )
             else:
                 st.error(f"File not found: {resource['file_path']}")
+            
+            st.markdown("---")  # Divider between resources
 
 def announcements_page():
     st.title("Company Announcements")
@@ -612,43 +533,43 @@ def announcements_page():
     # Display each announcement in a card-like format
     for announcement in announcements:
         with st.container():
-            st.markdown(f"""
-            <div class="card">
-                <div style="display: flex; gap: 1rem; align-items: center;">
-                    <div style="flex: 1;">
-                        {f'<img src="{announcement["file_path"]}" style="max-width: 100%; border-radius: 0.5rem;">' if os.path.exists(announcement["file_path"]) else ''}
-                    </div>
-                    <div style="flex: 3;">
-                        <h3 style="margin-top: 0;">{announcement["Heading"]}</h3>
-                        <p style="color: #666; margin-bottom: 0.5rem;">{announcement["Date"]}</p>
-                        <p>{announcement["Description"]}</p>
-                    </div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+            # Create columns for layout (image on left, text on right)
+            col1, col2 = st.columns([1, 3])
+            
+            with col1:
+                # Display image if available
+                if os.path.exists(announcement["file_path"]):
+                    try:
+                        image = Image.open(announcement["file_path"])
+                        st.image(image, use_container_width=True)
+                    except Exception as e:
+                        st.error(f"Could not load image: {str(e)}")
+                else:
+                    st.error(f"Image not found: {announcement['file_path']}")
+            
+            with col2:
+                st.subheader(announcement["Heading"])
+                st.caption(f"Date: {announcement['Date']}")
+                st.write(announcement["Description"])
+            
+            st.markdown("---")  # Divider between announcements
 
 def add_back_button():
     st.markdown("""
-    <div class="back-button" onclick="window.history.back()">
-        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="19" y1="12" x2="5" y2="12"></line>
-            <polyline points="12 19 5 12 12 5"></polyline>
-        </svg>
-    </div>
+    <style>
+    .back-button {
+        position: fixed;
+        bottom: 20px;
+        left: 20px;
+        z-index: 1000;
+    }
+    </style>
     """, unsafe_allow_html=True)
     
-    # Add JavaScript to handle the back button
-    st.markdown("""
-    <script>
-    document.querySelector('.back-button').addEventListener('click', function() {
-        window.parent.postMessage({
-            'type': 'streamlit:setComponentValue',
-            'key': 'back_button',
-            'value': true
-        }, '*');
-    });
-    </script>
-    """, unsafe_allow_html=True)
+    if st.button("← logout", key="back_button"):
+        st.session_state.authenticated = False
+        st.session_state.selected_mode = None
+        st.rerun()
 
 def attendance_page():
     st.title("Attendance Management")
@@ -658,70 +579,36 @@ def attendance_page():
     stats = get_attendance_stats(selected_employee)
     st.subheader("This Month's Attendance Summary")
     
-    # Create a card-like layout for stats
-    st.markdown("""
-    <style>
-    .stats-card {
-        border-radius: 0.5rem;
-        padding: 1rem;
-        background-color: #f8f9fa;
-        text-align: center;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-    }
-    .stats-card h3 {
-        margin: 0;
-        font-size: 1rem;
-        color: #666;
-    }
-    .stats-card p {
-        margin: 0.5rem 0 0;
-        font-size: 1.5rem;
-        font-weight: bold;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-    
     col1, col2, col3, col4, col5 = st.columns(5)
-    with col1:
-        st.markdown(f"""
-        <div class="stats-card">
-            <h3>Present</h3>
-            <p>{stats['present']}</p>
-        </div>
-        """, unsafe_allow_html=True)
-    with col2:
-        st.markdown(f"""
-        <div class="stats-card">
-            <h3>Half Days</h3>
-            <p>{stats['half_day']}</p>
-        </div>
-        """, unsafe_allow_html=True)
-    with col3:
-        st.markdown(f"""
-        <div class="stats-card">
-            <h3>Mini Half</h3>
-            <p>{stats['mini_half_day']}</p>
-        </div>
-        """, unsafe_allow_html=True)
-    with col4:
-        st.markdown(f"""
-        <div class="stats-card">
-            <h3>Leaves</h3>
-            <p>{stats['leave']}</p>
-        </div>
-        """, unsafe_allow_html=True)
-    with col5:
-        st.markdown(f"""
-        <div class="stats-card">
-            <h3>Total Hours</h3>
-            <p>{stats['total_working_hours']}</p>
-        </div>
-        """, unsafe_allow_html=True)
+    col1.metric("Present", stats['present'])
+    col2.metric("Half Days", stats['half_day'])
+    col3.metric("Mini Half Days", stats['mini_half_day'])
+    col4.metric("Leaves", stats['leave'])
+    col5.metric("Total Hours", stats['total_working_hours'])
     
     st.markdown("---")
     
     # Check if attendance is already marked for today
     today_marked = check_existing_attendance(selected_employee)
+    if today_marked:
+        # Check if checkout is already done
+        if check_existing_checkout(selected_employee):
+            st.warning("You have already marked your attendance and checkout for today.")
+        else:
+            st.info("You have already marked your attendance for today.")
+            if st.button("Mark Check-out", key="checkout_button"):
+                with st.spinner("Recording checkout..."):
+                    attendance_id, error = record_attendance(
+                        selected_employee,
+                        is_checkout=True
+                    )
+                    
+                    if error:
+                        st.error(f"Failed to record checkout: {error}")
+                    else:
+                        st.success(f"Checkout recorded successfully! ID: {attendance_id}")
+                        st.balloons()
+                        st.rerun()
     
     # Main attendance options - separate tabs
     tab1, tab2 = st.tabs(["Today's Attendance", "Apply for Leave"])
@@ -730,7 +617,7 @@ def attendance_page():
         if not today_marked:
             st.subheader("Mark Today's Attendance")
             
-            if st.button("Check-in", key="checkin_button", type="primary"):
+            if st.button("Check-in", key="checkin_button"):
                 with st.spinner("Recording attendance..."):
                     attendance_id, error = record_attendance(selected_employee)
                     
@@ -741,24 +628,7 @@ def attendance_page():
                         st.balloons()
                         st.rerun()
         else:
-            # Check if checkout is already done
-            if check_existing_checkout(selected_employee):
-                st.warning("You have already marked your attendance and checkout for today.")
-            else:
-                st.info("You have already marked your attendance for today.")
-                if st.button("Mark Check-out", key="checkout_button", type="primary"):
-                    with st.spinner("Recording checkout..."):
-                        attendance_id, error = record_attendance(
-                            selected_employee,
-                            is_checkout=True
-                        )
-                        
-                        if error:
-                            st.error(f"Failed to record checkout: {error}")
-                        else:
-                            st.success(f"Checkout recorded successfully! ID: {attendance_id}")
-                            st.balloons()
-                            st.rerun()
+            st.info("Today's attendance already marked. Use the 'Apply for Leave' tab for future dates.")
     
     with tab2:
         st.subheader("Apply for Leave")
@@ -791,7 +661,7 @@ def attendance_page():
             key="leave_reason"
         )
         
-        if st.button("Submit Leave Request", key="submit_leave", type="primary"):
+        if st.button("Submit Leave Request", key="submit_leave"):
             if not leave_reason:
                 st.error("Please provide a reason for your leave")
             elif start_date > end_date:
@@ -834,7 +704,7 @@ def main():
         form_col1, form_col2, form_col3 = st.columns([1, 2, 1])
         
         with form_col2:
-            with st.form("login_form"):
+            with st.container():
                 employee_name = st.selectbox(
                     "Select Your Name", 
                     employee_names, 
@@ -846,8 +716,9 @@ def main():
                     key="passkey_input"
                 )
                 
-                login_button = st.form_submit_button(
+                login_button = st.button(
                     "Log in", 
+                    key="login_button",
                     use_container_width=True
                 )
                 
@@ -859,71 +730,25 @@ def main():
                     else:
                         st.error("Invalid Password. Please try again.")
     else:
-        if not st.session_state.selected_mode:
-            st.title("Employee Portal")
-            st.markdown(f"Welcome, **{st.session_state.employee_name}**!")
-            
-            # Display current date and time
-            current_time = get_ist_time()
-            st.caption(f"Current time: {current_time.strftime('%A, %d %B %Y %I:%M %p')}")
-            
-            st.markdown("---")
-            
-            st.subheader("Select an option:")
-            
-            # Create cards for each mode
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                st.markdown("""
-                <div class="card" onclick="window.parent.postMessage({'type': 'streamlit:setComponentValue', 'key': 'attendance_mode', 'value': true}, '*');" style="cursor: pointer; text-align: center;">
-                    <h3 style="margin-top: 0;">Attendance</h3>
-                    <p>Mark your attendance and apply for leaves</p>
-                </div>
-                """, unsafe_allow_html=True)
-                
-            with col2:
-                st.markdown("""
-                <div class="card" onclick="window.parent.postMessage({'type': 'streamlit:setComponentValue', 'key': 'resources_mode', 'value': true}, '*');" style="cursor: pointer; text-align: center;">
-                    <h3 style="margin-top: 0;">Resources</h3>
-                    <p>Company documents and resources</p>
-                </div>
-                """, unsafe_allow_html=True)
-                
-            with col3:
-                st.markdown("""
-                <div class="card" onclick="window.parent.postMessage({'type': 'streamlit:setComponentValue', 'key': 'announcements_mode', 'value': true}, '*');" style="cursor: pointer; text-align: center;">
-                    <h3 style="margin-top: 0;">Announcements</h3>
-                    <p>Company news and updates</p>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            # Add JavaScript to handle card clicks
-            st.markdown("""
-            <script>
-            document.addEventListener('DOMContentLoaded', function() {
-                const cards = document.querySelectorAll('.card');
-                cards.forEach(card => {
-                    card.addEventListener('click', function() {
-                        const key = this.getAttribute('onclick').match(/'key': '([^']*)'/)[1];
-                        window.parent.postMessage({
-                            'type': 'streamlit:setComponentValue',
-                            'key': key,
-                            'value': true
-                        }, '*');
-                    });
-                });
-            });
-            </script>
-            """, unsafe_allow_html=True)
-            
-            # Logout button
-            st.markdown("---")
-            if st.button("Logout", type="primary", use_container_width=True):
-                st.session_state.authenticated = False
-                st.session_state.selected_mode = None
+        st.title("Select Mode")
+        col1, col2, col3 = st.columns(3)  # Changed to 3 columns
+        
+        with col1:
+            if st.button("Attendance", use_container_width=True, key="attendance_mode"):
+                st.session_state.selected_mode = "Attendance"
                 st.rerun()
-        else:
+                
+        with col2:
+            if st.button("Resources", use_container_width=True, key="resources_mode"):
+                st.session_state.selected_mode = "Resources"
+                st.rerun()
+        
+        with col3:
+            if st.button("Announcements", use_container_width=True, key="announcements_mode"):
+                st.session_state.selected_mode = "Announcements"
+                st.rerun()
+        
+        if st.session_state.selected_mode:
             add_back_button()
             
             if st.session_state.selected_mode == "Attendance":
