@@ -214,7 +214,17 @@ def log_attendance_to_gsheet(conn, attendance_data):
         existing_data = conn.read(worksheet="Attendance", usecols=list(range(len(ATTENDANCE_SHEET_COLUMNS))), ttl=5)
         existing_data = existing_data.dropna(how='all')
         
+        # Ensure proper dtypes
+        for col in ['Check-in Time', 'Check-out Time', 'Check-in Date Time', 'Check-out Date Time']:
+            if col in existing_data.columns:
+                existing_data[col] = existing_data[col].astype(str)
+        
         attendance_data = attendance_data.reindex(columns=ATTENDANCE_SHEET_COLUMNS)
+        
+        # Convert time columns to string in new data
+        for col in ['Check-in Time', 'Check-out Time', 'Check-in Date Time', 'Check-out Date Time']:
+            if col in attendance_data.columns:
+                attendance_data[col] = attendance_data[col].astype(str)
         
         updated_data = pd.concat([existing_data, attendance_data], ignore_index=True)
         updated_data = updated_data.drop_duplicates(subset=["Attendance ID"], keep="last")
@@ -275,6 +285,12 @@ def record_attendance(employee_name, status=None, leave_reason="", is_checkout=F
             existing_data = conn.read(worksheet="Attendance", usecols=list(range(len(ATTENDANCE_SHEET_COLUMNS))), ttl=5)
             existing_data = existing_data.dropna(how='all')
             
+            # Ensure proper dtypes for time columns
+            existing_data['Check-in Time'] = existing_data['Check-in Time'].astype(str)
+            existing_data['Check-out Time'] = existing_data['Check-out Time'].astype(str)
+            existing_data['Check-in Date Time'] = existing_data['Check-in Date Time'].astype(str)
+            existing_data['Check-out Date Time'] = existing_data['Check-out Date Time'].astype(str)
+            
             today_record = existing_data[
                 (existing_data['Employee Code'].astype(str) == employee_code) & 
                 (existing_data['Date'] == current_date)
@@ -284,16 +300,17 @@ def record_attendance(employee_name, status=None, leave_reason="", is_checkout=F
                 attendance_id = today_record.iloc[0]['Attendance ID']
                 today_record_index = today_record.index[0]
                 
-                existing_data.at[today_record_index, 'Check-out Time'] = current_time
-                existing_data.at[today_record_index, 'Check-out Date Time'] = current_datetime
+                # Explicitly convert to string before assignment
+                existing_data.at[today_record_index, 'Check-out Time'] = str(current_time)
+                existing_data.at[today_record_index, 'Check-out Date Time'] = str(current_datetime)
                 
                 check_in_time = existing_data.at[today_record_index, 'Check-in Time']
                 if pd.notna(check_in_time) and check_in_time != '':
-                    working_hours = calculate_working_hours(check_in_time, current_time)
-                    existing_data.at[today_record_index, 'Total Working Hours'] = working_hours
+                    working_hours = calculate_working_hours(str(check_in_time), str(current_time))
+                    existing_data.at[today_record_index, 'Total Working Hours'] = float(working_hours) if working_hours else 0.0
                     
-                    final_status = determine_status(check_in_time, current_time)
-                    existing_data.at[today_record_index, 'Status'] = final_status
+                    final_status = determine_status(str(check_in_time), str(current_time))
+                    existing_data.at[today_record_index, 'Status'] = str(final_status)
                 
                 conn.update(worksheet="Attendance", data=existing_data)
                 st.cache_data.clear()
@@ -307,16 +324,16 @@ def record_attendance(employee_name, status=None, leave_reason="", is_checkout=F
                 status = determine_status(current_time)
             
             attendance_data = {
-                "Attendance ID": attendance_id,
-                "Employee Name": employee_name,
-                "Employee Code": employee_code,
-                "Designation": designation,
-                "Date": current_date,
-                "Status": status,
-                "Leave Reason": leave_reason,
-                "Check-in Time": current_time,
+                "Attendance ID": str(attendance_id),
+                "Employee Name": str(employee_name),
+                "Employee Code": str(employee_code),
+                "Designation": str(designation),
+                "Date": str(current_date),
+                "Status": str(status),
+                "Leave Reason": str(leave_reason),
+                "Check-in Time": str(current_time),
                 "Check-out Time": "",
-                "Check-in Date Time": current_datetime,
+                "Check-in Date Time": str(current_datetime),
                 "Check-out Date Time": "",
                 "Total Working Hours": ""
             }
@@ -352,11 +369,11 @@ def record_future_leave(employee_name, start_date, end_date, leave_type, leave_r
             attendance_id = f"{leave_id}-{date.strftime('%Y%m%d')}"
             
             attendance_data = {
-                "Attendance ID": attendance_id,
-                "Employee Name": employee_name,
-                "Employee Code": employee_code,
-                "Designation": designation,
-                "Date": formatted_date,
+                "Attendance ID": str(attendance_id),
+                "Employee Name": str(employee_name),
+                "Employee Code": str(employee_code),
+                "Designation": str(designation),
+                "Date": str(formatted_date),
                 "Status": "Leave",
                 "Leave Reason": f"{leave_type}: {leave_reason}",
                 "Check-in Time": "",
@@ -541,7 +558,7 @@ def add_back_button():
     if st.button("← logout", key="back_button"):
         st.session_state.authenticated = False
         st.session_state.selected_mode = None
-        st.experimental_rerun()
+        st.rerun()
 
 def attendance_page():
     st.title("Attendance Management")
@@ -578,7 +595,7 @@ def attendance_page():
                     else:
                         st.success(f"Checkout recorded successfully! ID: {attendance_id}")
                         st.balloons()
-                        st.experimental_rerun()
+                        st.rerun()
     
     tab1, tab2 = st.tabs(["Today's Attendance", "Apply for Leave"])
     
@@ -595,7 +612,7 @@ def attendance_page():
                     else:
                         st.success(f"Attendance recorded successfully! ID: {attendance_id}")
                         st.balloons()
-                        st.experimental_rerun()
+                        st.rerun()
         else:
             st.info("Today's attendance already marked. Use the 'Apply for Leave' tab for future dates.")
     
@@ -654,7 +671,7 @@ def attendance_page():
                         else:
                             st.success(f"Leave request submitted successfully from {start_date.strftime('%d-%m-%Y')} to {end_date.strftime('%d-%m-%Y')}")
                             st.balloons()
-                            st.experimental_rerun()
+                            st.rerun()
 
 def main():
     if 'authenticated' not in st.session_state:
@@ -694,7 +711,7 @@ def main():
                     if authenticate_employee(employee_name, passkey):
                         st.session_state.authenticated = True
                         st.session_state.employee_name = employee_name
-                        st.experimental_rerun()
+                        st.rerun()
                     else:
                         st.error("Invalid Password. Please try again.")
     else:
@@ -704,17 +721,17 @@ def main():
         with col1:
             if st.button("Attendance", use_container_width=True, key="attendance_mode"):
                 st.session_state.selected_mode = "Attendance"
-                st.experimental_rerun()
+                st.rerun()
                 
         with col2:
             if st.button("Resources", use_container_width=True, key="resources_mode"):
                 st.session_state.selected_mode = "Resources"
-                st.experimental_rerun()
+                st.rerun()
         
         with col3:
             if st.button("Announcements", use_container_width=True, key="announcements_mode"):
                 st.session_state.selected_mode = "Announcements"
-                st.experimental_rerun()
+                st.rerun()
         
         if st.session_state.selected_mode:
             add_back_button()
