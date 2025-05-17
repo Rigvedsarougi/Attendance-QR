@@ -608,7 +608,7 @@ def attendance_page():
                     else:
                         st.success(f"Checkout recorded successfully! ID: {attendance_id}")
                         st.balloons()
-                        st.rerun()  # Fixed: Changed from experimental_rerun to rerun
+                        st.rerun()
     
     # Main attendance options - separate tabs
     tab1, tab2 = st.tabs(["Today's Attendance", "Apply for Leave"])
@@ -626,7 +626,7 @@ def attendance_page():
                     else:
                         st.success(f"Attendance recorded successfully! ID: {attendance_id}")
                         st.balloons()
-                        st.rerun()  # Fixed: Changed from experimental_rerun to rerun
+                        st.rerun()
         else:
             st.info("Today's attendance already marked. Use the 'Apply for Leave' tab for future dates.")
     
@@ -686,7 +686,7 @@ def attendance_page():
                         else:
                             st.success(f"Leave request submitted successfully from {start_date.strftime('%d-%m-%Y')} to {end_date.strftime('%d-%m-%Y')}")
                             st.balloons()
-                            st.rerun()  # Fixed: Changed from experimental_rerun to rerun
+                            st.rerun()
 
 def main():
     if 'authenticated' not in st.session_state:
