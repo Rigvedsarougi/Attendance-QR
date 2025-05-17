@@ -514,7 +514,7 @@ def announcements_page():
             "Heading": "Biolume Day",
             "Date": "30/05/2025",
             "Description": "Join us for our annual Biolume Day celebration with special events and activities.",
-            "file_path": "biolume.png"
+            "file_path": "ALLGEN TRADING logo.png"
         },
         {
             "Heading": "Office Closure",
