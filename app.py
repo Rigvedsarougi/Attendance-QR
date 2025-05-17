@@ -687,6 +687,7 @@ def attendance_page():
                             st.success(f"Leave request submitted successfully from {start_date.strftime('%d-%m-%Y')} to {end_date.strftime('%d-%m-%Y')}")
                             st.balloons()
                             st.rerun()  # Fixed: Changed from experimental_rerun to rerun
+
 def main():
     if 'authenticated' not in st.session_state:
         st.session_state.authenticated = False
