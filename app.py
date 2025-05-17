@@ -504,6 +504,56 @@ def resources_page():
             
             st.markdown("---")  # Divider between resources
 
+def announcements_page():
+    st.title("Company Announcements")
+    st.markdown("Stay updated with the latest company news and announcements.")
+    
+    # Define the announcements (you can also load this from a JSON file or Google Sheet)
+    announcements = [
+        {
+            "Heading": "Biolume Day",
+            "Date": "30/05/2025",
+            "Description": "Join us for our annual Biolume Day celebration with special events and activities.",
+            "file_path": "biolume.png"
+        },
+        {
+            "Heading": "Office Closure",
+            "Date": "15/08/2025",
+            "Description": "The office will be closed on Independence Day. Wishing everyone a happy holiday!",
+            "file_path": "holiday.png"
+        },
+        {
+            "Heading": "New Product Launch",
+            "Date": "10/07/2025",
+            "Description": "Exciting new product line launching next month. Stay tuned for details!",
+            "file_path": "product.png"
+        }
+    ]
+    
+    # Display each announcement in a card-like format
+    for announcement in announcements:
+        with st.container():
+            # Create columns for layout (image on left, text on right)
+            col1, col2 = st.columns([1, 3])
+            
+            with col1:
+                # Display image if available
+                if os.path.exists(announcement["file_path"]):
+                    try:
+                        image = Image.open(announcement["file_path"])
+                        st.image(image, use_column_width=True)
+                    except Exception as e:
+                        st.error(f"Could not load image: {str(e)}")
+                else:
+                    st.error(f"Image not found: {announcement['file_path']}")
+            
+            with col2:
+                st.subheader(announcement["Heading"])
+                st.caption(f"Date: {announcement['Date']}")
+                st.write(announcement["Description"])
+            
+            st.markdown("---")  # Divider between announcements
+
 def add_back_button():
     st.markdown("""
     <style>
@@ -681,7 +731,7 @@ def main():
                         st.error("Invalid Password. Please try again.")
     else:
         st.title("Select Mode")
-        col1, col2 = st.columns(2)
+        col1, col2, col3 = st.columns(3)  # Changed to 3 columns
         
         with col1:
             if st.button("Attendance", use_container_width=True, key="attendance_mode"):
@@ -693,6 +743,11 @@ def main():
                 st.session_state.selected_mode = "Resources"
                 st.rerun()
         
+        with col3:
+            if st.button("Announcements", use_container_width=True, key="announcements_mode"):
+                st.session_state.selected_mode = "Announcements"
+                st.rerun()
+        
         if st.session_state.selected_mode:
             add_back_button()
             
@@ -700,6 +755,8 @@ def main():
                 attendance_page()
             elif st.session_state.selected_mode == "Resources":
                 resources_page()
+            elif st.session_state.selected_mode == "Announcements":
+                announcements_page()
 
 if __name__ == "__main__":
     main()
