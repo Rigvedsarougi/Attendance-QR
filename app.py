@@ -1,3 +1,4 @@
+# app.py
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
@@ -23,7 +24,7 @@ def display_login_header():
     with col2:
         try:
             logo = Image.open("logo.png")
-            st.image(logo, use_column_width=True)
+            st.image(logo, use_container_width=True)
         except FileNotFoundError:
             st.warning("Logo image not found. Please ensure 'logo.png' exists in the same directory.")
         except Exception as e:
@@ -111,38 +112,6 @@ ATTENDANCE_SHEET_COLUMNS = [
     "Check-out Date Time",
     "Total Working Hours"
 ]
-
-TICKET_SHEET_COLUMNS = [
-    "Ticket ID",
-    "Raised By (Employee Name)",
-    "Raised By (Employee Code)",
-    "Raised By (Designation)",
-    "Raised By (Email)",
-    "Raised By (Phone)",
-    "Category",
-    "Subject",
-    "Details",
-    "Status",
-    "Date Raised",
-    "Time Raised",
-    "Resolution Notes",
-    "Date Resolved",
-    "Priority"
-]
-
-TICKET_CATEGORIES = [
-    "HR Department",
-    "MIS & Back Office",
-    "Digital & Marketing",
-    "Co-founders",
-    "Accounts",
-    "Admin Department",
-    "Travel Issue",
-    "Product - Delivery/Quantity/Quality/Missing",
-    "Others"
-]
-
-PRIORITY_LEVELS = ["Low", "Medium", "High", "Critical"]
 
 # Authentication function
 def authenticate_employee(employee_name, passkey):
@@ -243,9 +212,6 @@ def check_existing_leave(employee_name, start_date, end_date):
 def generate_attendance_id():
     return f"ATT-{get_ist_time().strftime('%Y%m%d%H%M%S')}-{str(uuid.uuid4())[:4].upper()}"
 
-def generate_ticket_id():
-    return f"TKT-{get_ist_time().strftime('%Y%m%d%H%M%S')}-{str(uuid.uuid4())[:4].upper()}"
-
 def log_attendance_to_gsheet(conn, attendance_data):
     try:
         existing_data = conn.read(worksheet="Attendance", usecols=list(range(len(ATTENDANCE_SHEET_COLUMNS))), ttl=5)
@@ -257,16 +223,6 @@ def log_attendance_to_gsheet(conn, attendance_data):
         updated_data = updated_data.drop_duplicates(subset=["Attendance ID"], keep="last")
         
         conn.update(worksheet="Attendance", data=updated_data)
-        return True, None
-    except Exception as e:
-        return False, str(e)
-
-def log_ticket_to_gsheet(conn, ticket_data):
-    try:
-        existing_data = conn.read(worksheet="Tickets", usecols=list(range(len(TICKET_SHEET_COLUMNS))), ttl=5)
-        existing_data = existing_data.dropna(how='all')
-        updated_data = pd.concat([existing_data, ticket_data], ignore_index=True)
-        conn.update(worksheet="Tickets", data=updated_data)
         return True, None
     except Exception as e:
         return False, str(e)
@@ -504,213 +460,6 @@ def get_attendance_stats(employee_name):
             "total_working_hours": 0
         }
 
-def support_ticket_page():
-    st.title("Support Ticket Management")
-    selected_employee = st.session_state.employee_name
-    employee_code = Person[Person['Employee Name'] == selected_employee]['Employee Code'].values[0]
-    designation = Person[Person['Employee Name'] == selected_employee]['Designation'].values[0]
-    
-    tab1, tab2 = st.tabs(["Raise New Ticket", "My Support Requests"])
-    
-    with tab1:
-        st.subheader("Raise New Support Ticket")
-        with st.form("ticket_form"):
-            # Employee contact info
-            col1, col2 = st.columns(2)
-            with col1:
-                employee_email = st.text_input(
-                    "Your Email*",
-                    placeholder="your.email@company.com",
-                    help="Please provide your contact email"
-                )
-            with col2:
-                employee_phone = st.text_input(
-                    "Your Phone Number*",
-                    placeholder="9876543210",
-                    help="Please provide your contact number"
-                )
-            
-            # Ticket details
-            col1, col2 = st.columns(2)
-            with col1:
-                category = st.selectbox(
-                    "Department",
-                    TICKET_CATEGORIES,
-                    help="Select the most relevant category for your ticket"
-                )
-            with col2:
-                priority = st.selectbox(
-                    "Priority*",
-                    PRIORITY_LEVELS,
-                    index=1,  # Default to Medium
-                    help="How urgent is this issue?"
-                )
-            
-            subject = st.text_input(
-                "Subject*",
-                max_chars=100,
-                placeholder="Brief description of your ticket",
-                help="Keep it concise but descriptive"
-            )
-            
-            details = st.text_area(
-                "Details*",
-                height=200,
-                placeholder="Please provide detailed information about your ticket...",
-                help="Include all relevant details to help resolve your issue quickly"
-            )
-            
-            st.markdown("<small>*Required fields</small>", unsafe_allow_html=True)
-            
-            submitted = st.form_submit_button("Submit Ticket")
-            
-            if submitted:
-                if not subject or not details or not employee_email or not employee_phone:
-                    st.error("Please fill in all required fields (marked with *)")
-                elif not employee_email.strip() or "@" not in employee_email:
-                    st.error("Please enter a valid email address")
-                elif not employee_phone.strip().isdigit() or len(employee_phone.strip()) < 10:
-                    st.error("Please enter a valid 10-digit phone number")
-                else:
-                    with st.spinner("Submitting your ticket..."):
-                        ticket_id = generate_ticket_id()
-                        current_date = get_ist_time().strftime("%d-%m-%Y")
-                        current_time = get_ist_time().strftime("%H:%M:%S")
-                        
-                        ticket_data = {
-                            "Ticket ID": ticket_id,
-                            "Raised By (Employee Name)": selected_employee,
-                            "Raised By (Employee Code)": employee_code,
-                            "Raised By (Designation)": designation,
-                            "Raised By (Email)": employee_email.strip(),
-                            "Raised By (Phone)": employee_phone.strip(),
-                            "Category": category,
-                            "Subject": subject,
-                            "Details": details,
-                            "Status": "Open",
-                            "Date Raised": current_date,
-                            "Time Raised": current_time,
-                            "Resolution Notes": "",
-                            "Date Resolved": "",
-                            "Priority": priority
-                        }
-                        
-                        ticket_df = pd.DataFrame([ticket_data])
-                        success, error = log_ticket_to_gsheet(conn, ticket_df)
-                        
-                        if success:
-                            st.success(f"""
-                            Your ticket has been submitted successfully! 
-                            We will update you within 48 hours regarding this matter.
-                            
-                            **Ticket ID:** {ticket_id}
-                            **Priority:** {priority}
-                            """)
-                            st.balloons()
-                        else:
-                            st.error(f"Failed to submit ticket: {error}")
-    
-    with tab2:
-        st.subheader("My Support Tickets")
-        try:
-            tickets_data = conn.read(worksheet="Tickets", usecols=list(range(len(TICKET_SHEET_COLUMNS))), ttl=5)
-            tickets_data = tickets_data.dropna(how="all")
-            
-            if not tickets_data.empty:
-                my_tickets = tickets_data[
-                    tickets_data['Raised By (Employee Name)'] == selected_employee
-                ].sort_values(by="Date Raised", ascending=False)
-                
-                if not my_tickets.empty:
-                    pending_count = len(my_tickets[my_tickets['Status'] == "Open"])
-                    resolved_count = len(my_tickets[my_tickets['Status'] == "Resolved"])
-                    
-                    col1, col2, col3 = st.columns(3)
-                    col1.metric("Total Tickets", len(my_tickets))
-                    col2.metric("Open", pending_count)
-                    col3.metric("Resolved", resolved_count)
-                    
-                    st.subheader("Filter Tickets")
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        status_filter = st.selectbox(
-                            "Status",
-                            ["All", "Open", "Resolved"],
-                            key="status_filter"
-                        )
-                    with col2:
-                        priority_filter = st.selectbox(
-                            "Priority",
-                            ["All"] + PRIORITY_LEVELS,
-                            key="priority_filter"
-                        )
-                    with col3:
-                        category_filter = st.selectbox(
-                            "Category",
-                            ["All"] + TICKET_CATEGORIES,
-                            key="category_filter"
-                        )
-                    
-                    filtered_tickets = my_tickets.copy()
-                    if status_filter != "All":
-                        filtered_tickets = filtered_tickets[filtered_tickets['Status'] == status_filter]
-                    if priority_filter != "All":
-                        filtered_tickets = filtered_tickets[filtered_tickets['Priority'] == priority_filter]
-                    if category_filter != "All":
-                        filtered_tickets = filtered_tickets[filtered_tickets['Category'] == category_filter]
-                    
-                    for _, row in filtered_tickets.iterrows():
-                        with st.expander(f"{row['Subject']} - {row['Status']} ({row['Priority']})"):
-                            status_color = "red" if row['Status'] == "Open" else "green"
-                            st.markdown(f"""
-                            <div style="display: flex; justify-content: space-between; align-items: center;">
-                                <div>
-                                    <strong>Ticket ID:</strong> {row['Ticket ID']}<br>
-                                    <strong>Date Raised:</strong> {row['Date Raised']} at {row['Time Raised']}
-                                </div>
-                                <div style="color: {status_color}; font-weight: bold;">
-                                    {row['Status']}
-                                </div>
-                            </div>
-                            """, unsafe_allow_html=True)
-                            
-                            st.write("---")
-                            col1, col2 = st.columns(2)
-                            with col1:
-                                st.write(f"**Your Contact Email:** {row['Raised By (Email)']}")
-                                st.write(f"**Your Phone Number:** {row['Raised By (Phone)']}")
-                                st.write(f"**Category:** {row['Category']}")
-                            with col2:
-                                st.write(f"**Priority:** {row['Priority']}")
-                                if row['Date Resolved']:
-                                    st.write(f"**Date Resolved:** {row['Date Resolved']}")
-                            
-                            st.write("---")
-                            st.write("**Details:**")
-                            st.write(row['Details'])
-                            
-                            if row['Status'] == "Resolved" and row['Resolution Notes']:
-                                st.write("---")
-                                st.write("**Resolution Notes:**")
-                                st.write(row['Resolution Notes'])
-                    
-                    if not filtered_tickets.empty:
-                        csv = filtered_tickets.to_csv(index=False).encode('utf-8')
-                        st.download_button(
-                            "Download Tickets",
-                            csv,
-                            "my_support_tickets.csv",
-                            "text/csv",
-                            key='download-tickets-csv'
-                        )
-                else:
-                    st.info("You haven't raised any support tickets yet.")
-            else:
-                st.info("No support tickets found in the system.")
-                
-        except Exception as e:
-            st.error(f"Error retrieving support tickets: {str(e)}")
-
 def resources_page():
     st.title("Company Resources")
     st.markdown("Download important company documents and product catalogs.")
@@ -834,70 +583,60 @@ def attendance_page():
     with tab2:
         st.subheader("Apply for Leave")
         
-        with st.form("leave_form", clear_on_submit=True):
-            tomorrow = get_ist_time().date() + timedelta(days=1)
-            col1, col2 = st.columns(2)
-            with col1:
-                start_date = st.date_input(
-                    "Start Date*",
-                    min_value=tomorrow,
-                    value=tomorrow,
-                    help="Select the first day of your leave (must be future date)"
-                )
-            with col2:
-                end_date = st.date_input(
-                    "End Date*",
-                    min_value=tomorrow,
-                    help="Select the last day of your leave"
-                )
-            
-            if start_date > end_date:
-                st.error("End date must be after start date")
-            
-            leave_types = ["Sick Leave", "Personal Leave", "Vacation", "Other"]
-            leave_type = st.selectbox("Leave Type*", leave_types, key="leave_type")
-            
-            leave_reason = st.text_area(
-                "Reason for Leave*",
-                placeholder="Please provide details about your leave",
-                key="leave_reason"
+        tomorrow = get_ist_time().date() + timedelta(days=1)
+        col1, col2 = st.columns(2)
+        with col1:
+            start_date = st.date_input(
+                "Start Date*",
+                min_value=tomorrow,
+                value=tomorrow,
+                help="Select the first day of your leave (must be future date)"
             )
-            
-            submitted = st.form_submit_button("Submit Leave Request")
-            
-            if submitted:
-                if not leave_reason:
-                    st.error("Please provide a reason for your leave")
-                elif start_date > end_date:
-                    st.error("End date must be after start date")
+        with col2:
+            end_date = st.date_input(
+                "End Date*",
+                min_value=tomorrow,
+                help="Select the last day of your leave"
+            )
+        
+        if start_date > end_date:
+            st.error("End date must be after start date")
+        
+        leave_types = ["Sick Leave", "Personal Leave", "Vacation", "Other"]
+        leave_type = st.selectbox("Leave Type*", leave_types, key="leave_type")
+        
+        leave_reason = st.text_area(
+            "Reason for Leave*",
+            placeholder="Please provide details about your leave",
+            key="leave_reason"
+        )
+        
+        if st.button("Submit Leave Request", key="submit_leave"):
+            if not leave_reason:
+                st.error("Please provide a reason for your leave")
+            elif start_date > end_date:
+                st.error("End date must be after start date")
+            else:
+                # Check if these dates already have leave applied
+                existing_leave = check_existing_leave(selected_employee, start_date, end_date)
+                if existing_leave:
+                    st.error("You already have leave applied for some or all of these dates")
                 else:
-                    # Check if these dates already have leave applied
-                    existing_leave = check_existing_leave(selected_employee, start_date, end_date)
-                    if existing_leave:
-                        st.error("You already have leave applied for some or all of these dates")
-                    else:
-                        # Show confirmation dialog
-                        with st.popover("Confirm Leave Application", use_container_width=True):
-                            st.write(f"Please confirm your leave application from {start_date.strftime('%d-%m-%Y')} to {end_date.strftime('%d-%m-%Y')}")
-                            st.write(f"Leave Type: {leave_type}")
-                            st.write(f"Reason: {leave_reason}")
-                            
-                            if st.button("Confirm Submission", key="confirm_leave"):
-                                with st.spinner("Submitting leave request..."):
-                                    leave_id, error = record_future_leave(
-                                        selected_employee,
-                                        start_date,
-                                        end_date,
-                                        leave_type,
-                                        leave_reason
-                                    )
-                                    
-                                    if error:
-                                        st.error(f"Failed to submit leave request: {error}")
-                                    else:
-                                        st.success(f"Leave request submitted successfully from {start_date.strftime('%d-%m-%Y')} to {end_date.strftime('%d-%m-%Y')}")
-                                        st.balloons()
-                                        st.rerun()
+                    with st.spinner("Submitting leave request..."):
+                        leave_id, error = record_future_leave(
+                            selected_employee,
+                            start_date,
+                            end_date,
+                            leave_type,
+                            leave_reason
+                        )
+                        
+                        if error:
+                            st.error(f"Failed to submit leave request: {error}")
+                        else:
+                            st.success(f"Leave request submitted successfully from {start_date.strftime('%d-%m-%Y')} to {end_date.strftime('%d-%m-%Y')}")
+                            st.balloons()
+                            st.rerun()
 
 def main():
     if 'authenticated' not in st.session_state:
@@ -942,7 +681,7 @@ def main():
                         st.error("Invalid Password. Please try again.")
     else:
         st.title("Select Mode")
-        col1, col2, col3 = st.columns(3)
+        col1, col2 = st.columns(2)
         
         with col1:
             if st.button("Attendance", use_container_width=True, key="attendance_mode"):
@@ -953,11 +692,6 @@ def main():
             if st.button("Resources", use_container_width=True, key="resources_mode"):
                 st.session_state.selected_mode = "Resources"
                 st.rerun()
-                
-        with col3:
-            if st.button("Support Ticket", use_container_width=True, key="ticket_mode"):
-                st.session_state.selected_mode = "Support Ticket"
-                st.rerun()
         
         if st.session_state.selected_mode:
             add_back_button()
@@ -966,8 +700,6 @@ def main():
                 attendance_page()
             elif st.session_state.selected_mode == "Resources":
                 resources_page()
-            elif st.session_state.selected_mode == "Support Ticket":
-                support_ticket_page()
 
 if __name__ == "__main__":
     main()
