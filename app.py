@@ -24,7 +24,7 @@ def display_login_header():
     with col2:
         try:
             logo = Image.open("logo.png")
-            st.image(logo, use_column_width=True)
+            st.image(logo, use_container_width=True)
         except FileNotFoundError:
             st.warning("Logo image not found. Please ensure 'logo.png' exists in the same directory.")
         except Exception as e:
@@ -513,7 +513,7 @@ def announcements_page():
                 if os.path.exists(announcement["file_path"]):
                     try:
                         image = Image.open(announcement["file_path"])
-                        st.image(image, use_column_width=True)
+                        st.image(image, use_container_width=True)
                     except Exception as e:
                         st.error(f"Could not load image: {str(e)}")
                 else:
@@ -541,7 +541,7 @@ def add_back_button():
     if st.button("← logout", key="back_button"):
         st.session_state.authenticated = False
         st.session_state.selected_mode = None
-        st.experimental_rerun()
+        st.rerun()
 
 def attendance_page():
     st.title("Attendance Management")
@@ -578,7 +578,7 @@ def attendance_page():
                     else:
                         st.success(f"Checkout recorded successfully! ID: {attendance_id}")
                         st.balloons()
-                        st.experimental_rerun()
+                        st.rerun()
     
     tab1, tab2 = st.tabs(["Today's Attendance", "Apply for Leave"])
     
@@ -595,7 +595,7 @@ def attendance_page():
                     else:
                         st.success(f"Attendance recorded successfully! ID: {attendance_id}")
                         st.balloons()
-                        st.experimental_rerun()
+                        st.rerun()
         else:
             st.info("Today's attendance already marked. Use the 'Apply for Leave' tab for future dates.")
     
@@ -654,7 +654,7 @@ def attendance_page():
                         else:
                             st.success(f"Leave request submitted successfully from {start_date.strftime('%d-%m-%Y')} to {end_date.strftime('%d-%m-%Y')}")
                             st.balloons()
-                            st.experimental_rerun()
+                            st.rerun()
 
 def main():
     if 'authenticated' not in st.session_state:
@@ -694,7 +694,7 @@ def main():
                     if authenticate_employee(employee_name, passkey):
                         st.session_state.authenticated = True
                         st.session_state.employee_name = employee_name
-                        st.experimental_rerun()
+                        st.rerun()
                     else:
                         st.error("Invalid Password. Please try again.")
     else:
@@ -704,17 +704,17 @@ def main():
         with col1:
             if st.button("Attendance", use_container_width=True, key="attendance_mode"):
                 st.session_state.selected_mode = "Attendance"
-                st.experimental_rerun()
+                st.rerun()
                 
         with col2:
             if st.button("Resources", use_container_width=True, key="resources_mode"):
                 st.session_state.selected_mode = "Resources"
-                st.experimental_rerun()
+                st.rerun()
         
         with col3:
             if st.button("Announcements", use_container_width=True, key="announcements_mode"):
                 st.session_state.selected_mode = "Announcements"
-                st.experimental_rerun()
+                st.rerun()
         
         if st.session_state.selected_mode:
             add_back_button()
