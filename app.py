@@ -17,6 +17,42 @@ def get_ist_time():
     ist = pytz.timezone('Asia/Kolkata')
     return utc_now.astimezone(ist)
 
+# Add this new helper function
+def check_existing_leave(employee_name, start_date, end_date):
+    try:
+        existing_data = conn.read(worksheet="Attendance", usecols=list(range(len(ATTENDANCE_SHEET_COLUMNS))), ttl=5)
+        existing_data = existing_data.dropna(how='all')
+        
+        if existing_data.empty:
+            return False
+        
+        employee_code = Person[Person['Employee Name'] == employee_name]['Employee Code'].values[0]
+        
+        # Create date range to check
+        date_range = pd.date_range(start=start_date, end=end_date)
+        
+        # Check each date in the range
+        for date in date_range:
+            # Skip weekends
+            if date.weekday() >= 5:
+                continue
+                
+            formatted_date = date.strftime("%d-%m-%Y")
+            existing_records = existing_data[
+                (existing_data['Employee Code'] == employee_code) & 
+                (existing_data['Date'] == formatted_date) &
+                (existing_data['Status'] == "Leave")
+            ]
+            
+            if not existing_records.empty:
+                return True
+                
+        return False
+        
+    except Exception as e:
+        st.error(f"Error checking existing leave: {str(e)}")
+        return True
+
 def display_login_header():
     col1, col2, col3 = st.columns([1, 3, 1])
     
@@ -827,7 +863,7 @@ def attendance_page():
                 placeholder="Please provide details about your leave",
                 key="leave_reason"
             )
-            
+                        
             submitted = st.form_submit_button("Submit Leave Request")
             
             if submitted:
@@ -836,21 +872,34 @@ def attendance_page():
                 elif start_date > end_date:
                     st.error("End date must be after start date")
                 else:
-                    with st.spinner("Submitting leave request..."):
-                        leave_id, error = record_future_leave(
-                            selected_employee,
-                            start_date,
-                            end_date,
-                            leave_type,
-                            leave_reason
+                    # Check if these dates already have leave applied
+                    existing_leave = check_existing_leave(selected_employee, start_date, end_date)
+                    if existing_leave:
+                        st.error("You already have leave applied for some or all of these dates")
+                    else:
+                        # Show confirmation dialog
+                        confirm = st.checkbox("Confirm you want to apply for leave from {} to {}".format(
+                            start_date.strftime('%d-%m-%Y'),
+                            end_date.strftime('%d-%m-%Y')
                         )
                         
-                        if error:
-                            st.error(f"Failed to submit leave request: {error}")
-                        else:
-                            st.success(f"Leave request submitted successfully from {start_date.strftime('%d-%m-%Y')} to {end_date.strftime('%d-%m-%Y')}")
-                            st.balloons()
-                            st.rerun()
+                        if confirm:
+                            with st.spinner("Submitting leave request..."):
+                                leave_id, error = record_future_leave(
+                                    selected_employee,
+                                    start_date,
+                                    end_date,
+                                    leave_type,
+                                    leave_reason
+                                )
+                                
+                                if error:
+                                    st.error(f"Failed to submit leave request: {error}")
+                                else:
+                                    st.success(f"Leave request submitted successfully from {start_date.strftime('%d-%m-%Y')} to {end_date.strftime('%d-%m-%Y')}")
+                                    st.balloons()
+                                    # Clear the form
+                                    st.rerun()
 
 def main():
     if 'authenticated' not in st.session_state:
