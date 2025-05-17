@@ -190,7 +190,7 @@ def check_existing_leave(employee_name, start_date, end_date):
         # Check each date in the range
         for date in date_range:
             # Skip weekends
-            if date.weekday() >= 6:
+            if date.weekday() >= 5:
                 continue
                 
             formatted_date = date.strftime("%d-%m-%Y")
@@ -364,7 +364,7 @@ def record_future_leave(employee_name, start_date, end_date, leave_type, leave_r
         
         for date in date_range:
             # Skip weekends (Saturday=5, Sunday=6)
-            if date.weekday() >= 6:
+            if date.weekday() >= 5:
                 continue
                 
             # Format the date
@@ -511,10 +511,10 @@ def announcements_page():
     # Define the announcements (you can also load this from a JSON file or Google Sheet)
     announcements = [
         {
-            "Heading": "Ansh Birthay",
+            "Heading": "Biolume Day",
             "Date": "30/05/2025",
-            "Description": "Join us Ansh Birthay celebration with special events and activities Sponsored by Ansh ONLY.",
-            "file_path": "ALLGEN TRADING logo.png"
+            "Description": "Join us for our annual Biolume Day celebration with special events and activities.",
+            "file_path": "biolume.png"
         },
         {
             "Heading": "Office Closure",
@@ -541,7 +541,7 @@ def announcements_page():
                 if os.path.exists(announcement["file_path"]):
                     try:
                         image = Image.open(announcement["file_path"])
-                        st.image(image, use_container_width=True)
+                        st.image(image, use_column_width=True)
                     except Exception as e:
                         st.error(f"Could not load image: {str(e)}")
                 else:
@@ -731,7 +731,7 @@ def main():
                         st.error("Invalid Password. Please try again.")
     else:
         st.title("Select Mode")
-        col1, col2, col3 = st.columns(3)  # Changed to 3 columns
+        col1, col2, col3 = st.columns(3)  # Now 3 columns for the new mode
         
         with col1:
             if st.button("Attendance", use_container_width=True, key="attendance_mode"):
