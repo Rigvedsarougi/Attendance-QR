@@ -190,7 +190,7 @@ def check_existing_leave(employee_name, start_date, end_date):
         # Check each date in the range
         for date in date_range:
             # Skip weekends
-            if date.weekday() >= 5:
+            if date.weekday() >= 6:
                 continue
                 
             formatted_date = date.strftime("%d-%m-%Y")
@@ -364,7 +364,7 @@ def record_future_leave(employee_name, start_date, end_date, leave_type, leave_r
         
         for date in date_range:
             # Skip weekends (Saturday=5, Sunday=6)
-            if date.weekday() >= 5:
+            if date.weekday() >= 6:
                 continue
                 
             # Format the date
