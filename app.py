@@ -541,7 +541,7 @@ def announcements_page():
                 if os.path.exists(announcement["file_path"]):
                     try:
                         image = Image.open(announcement["file_path"])
-                        st.image(image, use_column_width=True)
+                        st.image(image, use_container_width=True)
                     except Exception as e:
                         st.error(f"Could not load image: {str(e)}")
                 else:
