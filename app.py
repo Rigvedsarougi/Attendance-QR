@@ -559,14 +559,43 @@ def attendance_page():
     
     st.markdown("---")
     
+    # Get today's attendance record
     today_marked = check_existing_attendance(selected_employee)
+    today_record = None
+    
     if today_marked:
-        checkout_done = check_existing_checkout(selected_employee)
-        if checkout_done:
-            st.warning("You have already marked your attendance and checkout for today.")
-        else:
-            st.info("You have already marked your attendance for today.")
-            if st.button("Mark Check-out", key="checkout_button"):
+        try:
+            existing_data = conn.read(worksheet="Attendance", usecols=list(range(len(ATTENDANCE_SHEET_COLUMNS))), ttl=5)
+            existing_data = existing_data.dropna(how='all')
+            
+            if not existing_data.empty:
+                current_date = get_ist_time().strftime("%d-%m-%Y")
+                employee_code = str(Person[Person['Employee Name'] == selected_employee]['Employee Code'].values[0])
+                
+                today_record = existing_data[
+                    (existing_data['Employee Code'].astype(str) == employee_code) & 
+                    (existing_data['Date'] == current_date)
+                ].iloc[0] if not existing_data.empty else None
+        except Exception as e:
+            st.error(f"Error fetching today's record: {str(e)}")
+    
+    if today_marked and today_record is not None:
+        # Display today's attendance details
+        st.subheader("Today's Attendance Record")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.info(f"Check-in Time: {today_record['Check-in Time']}")
+        with col2:
+            if pd.notna(today_record['Check-out Time']) and today_record['Check-out Time'] != '':
+                st.success(f"Check-out Time: {today_record['Check-out Time']}")
+            else:
+                st.warning("Not checked out yet")
+        
+        st.info(f"Status: {today_record['Status']}")
+        
+        # Only show checkout button if not already checked out
+        if pd.isna(today_record['Check-out Time']) or today_record['Check-out Time'] == '':
+            if st.button("Mark Check-out", key="checkout_button", type="primary"):
                 with st.spinner("Recording checkout..."):
                     attendance_id, error = record_attendance(
                         selected_employee,
@@ -579,6 +608,8 @@ def attendance_page():
                         st.success(f"Checkout recorded successfully! ID: {attendance_id}")
                         st.balloons()
                         st.rerun()
+        else:
+            st.success("You have completed today's attendance")
     
     tab1, tab2 = st.tabs(["Today's Attendance", "Apply for Leave"])
     
@@ -586,7 +617,7 @@ def attendance_page():
         if not today_marked:
             st.subheader("Mark Today's Attendance")
             
-            if st.button("Check-in", key="checkin_button"):
+            if st.button("Check-in", key="checkin_button", type="primary"):
                 with st.spinner("Recording attendance..."):
                     attendance_id, error = record_attendance(selected_employee)
                     
@@ -630,7 +661,7 @@ def attendance_page():
             key="leave_reason"
         )
         
-        if st.button("Submit Leave Request", key="submit_leave"):
+        if st.button("Submit Leave Request", key="submit_leave", type="primary"):
             if not leave_reason:
                 st.error("Please provide a reason for your leave")
             elif start_date > end_date:
