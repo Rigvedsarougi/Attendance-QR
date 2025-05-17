@@ -190,7 +190,7 @@ def check_existing_leave(employee_name, start_date, end_date):
         # Check each date in the range
         for date in date_range:
             # Skip weekends
-            if date.weekday() >= 5:
+            if date.weekday() >= 6:
                 continue
                 
             formatted_date = date.strftime("%d-%m-%Y")
@@ -285,33 +285,31 @@ def record_attendance(employee_name, status=None, leave_reason="", is_checkout=F
             existing_data = conn.read(worksheet="Attendance", usecols=list(range(len(ATTENDANCE_SHEET_COLUMNS))), ttl=5)
             existing_data = existing_data.dropna(how='all')
             
-            today_record = existing_data[
+            # Find the record to update
+            record_index = existing_data[
                 (existing_data['Employee Code'] == employee_code) & 
                 (existing_data['Date'] == current_date)
-            ]
+            ].index
             
-            if not today_record.empty:
-                attendance_id = today_record.iloc[0]['Attendance ID']
-                
+            if len(record_index) > 0:
                 # Update the record
-                today_record.at[today_record.index[0], 'Check-out Time'] = current_time
-                today_record.at[today_record.index[0], 'Check-out Date Time'] = current_datetime
+                existing_data.loc[record_index[0], 'Check-out Time'] = current_time
+                existing_data.loc[record_index[0], 'Check-out Date Time'] = current_datetime
                 
                 # Calculate working hours
-                check_in_time = today_record.iloc[0]['Check-in Time']
-                working_hours = calculate_working_hours(check_in_time, current_time)
-                today_record.at[today_record.index[0], 'Total Working Hours'] = working_hours
+                check_in_time = existing_data.loc[record_index[0], 'Check-in Time']
+                if check_in_time and current_time:
+                    working_hours = calculate_working_hours(check_in_time, current_time)
+                    existing_data.loc[record_index[0], 'Total Working Hours'] = working_hours
                 
                 # Determine final status based on check-in and check-out times
                 final_status = determine_status(check_in_time, current_time)
-                today_record.at[today_record.index[0], 'Status'] = final_status
+                existing_data.loc[record_index[0], 'Status'] = final_status
                 
                 # Update the sheet
-                updated_data = existing_data.copy()
-                updated_data.update(today_record)
-                conn.update(worksheet="Attendance", data=updated_data)
+                conn.update(worksheet="Attendance", data=existing_data)
                 
-                return attendance_id, None
+                return existing_data.loc[record_index[0], 'Attendance ID'], None
             else:
                 return None, "No attendance record found for today to checkout"
         else:
@@ -364,7 +362,7 @@ def record_future_leave(employee_name, start_date, end_date, leave_type, leave_r
         
         for date in date_range:
             # Skip weekends (Saturday=5, Sunday=6)
-            if date.weekday() >= 5:
+            if date.weekday() >= 6:
                 continue
                 
             # Format the date
@@ -511,10 +509,10 @@ def announcements_page():
     # Define the announcements (you can also load this from a JSON file or Google Sheet)
     announcements = [
         {
-            "Heading": "Biolume Day",
+            "Heading": "Ansh Birthay",
             "Date": "30/05/2025",
-            "Description": "Join us for our annual Biolume Day celebration with special events and activities.",
-            "file_path": "biolume.png"
+            "Description": "Join us Ansh Birthay celebration with special events and activities Sponsored by Ansh ONLY.",
+            "file_path": "ALLGEN TRADING logo.png"
         },
         {
             "Heading": "Office Closure",
@@ -541,7 +539,7 @@ def announcements_page():
                 if os.path.exists(announcement["file_path"]):
                     try:
                         image = Image.open(announcement["file_path"])
-                        st.image(image, use_column_width=True)
+                        st.image(image, use_container_width=True)
                     except Exception as e:
                         st.error(f"Could not load image: {str(e)}")
                 else:
@@ -592,10 +590,11 @@ def attendance_page():
     today_marked = check_existing_attendance(selected_employee)
     if today_marked:
         # Check if checkout is already done
-        if check_existing_checkout(selected_employee):
+        checkout_done = check_existing_checkout(selected_employee)
+        if checkout_done:
             st.warning("You have already marked your attendance and checkout for today.")
         else:
-            st.info("You have already marked your attendance for today.")
+            st.info("You have already marked your attendance for today. Please mark your checkout when leaving.")
             if st.button("Mark Check-out", key="checkout_button"):
                 with st.spinner("Recording checkout..."):
                     attendance_id, error = record_attendance(
@@ -609,84 +608,77 @@ def attendance_page():
                         st.success(f"Checkout recorded successfully! ID: {attendance_id}")
                         st.balloons()
                         st.rerun()
+    else:
+        st.subheader("Mark Today's Attendance")
+        if st.button("Check-in", key="checkin_button"):
+            with st.spinner("Recording attendance..."):
+                attendance_id, error = record_attendance(selected_employee)
+                
+                if error:
+                    st.error(f"Failed to record attendance: {error}")
+                else:
+                    st.success(f"Attendance recorded successfully! ID: {attendance_id}")
+                    st.balloons()
+                    st.rerun()
     
-    # Main attendance options - separate tabs
-    tab1, tab2 = st.tabs(["Today's Attendance", "Apply for Leave"])
+    # Leave application section
+    st.markdown("---")
+    st.subheader("Apply for Leave")
     
-    with tab1:
-        if not today_marked:
-            st.subheader("Mark Today's Attendance")
-            
-            if st.button("Check-in", key="checkin_button"):
-                with st.spinner("Recording attendance..."):
-                    attendance_id, error = record_attendance(selected_employee)
+    tomorrow = get_ist_time().date() + timedelta(days=1)
+    col1, col2 = st.columns(2)
+    with col1:
+        start_date = st.date_input(
+            "Start Date*",
+            min_value=tomorrow,
+            value=tomorrow,
+            help="Select the first day of your leave (must be future date)"
+        )
+    with col2:
+        end_date = st.date_input(
+            "End Date*",
+            min_value=tomorrow,
+            help="Select the last day of your leave"
+        )
+    
+    if start_date > end_date:
+        st.error("End date must be after start date")
+    
+    leave_types = ["Sick Leave", "Personal Leave", "Vacation", "Other"]
+    leave_type = st.selectbox("Leave Type*", leave_types, key="leave_type")
+    
+    leave_reason = st.text_area(
+        "Reason for Leave*",
+        placeholder="Please provide details about your leave",
+        key="leave_reason"
+    )
+    
+    if st.button("Submit Leave Request", key="submit_leave"):
+        if not leave_reason:
+            st.error("Please provide a reason for your leave")
+        elif start_date > end_date:
+            st.error("End date must be after start date")
+        else:
+            # Check if these dates already have leave applied
+            existing_leave = check_existing_leave(selected_employee, start_date, end_date)
+            if existing_leave:
+                st.error("You already have leave applied for some or all of these dates")
+            else:
+                with st.spinner("Submitting leave request..."):
+                    leave_id, error = record_future_leave(
+                        selected_employee,
+                        start_date,
+                        end_date,
+                        leave_type,
+                        leave_reason
+                    )
                     
                     if error:
-                        st.error(f"Failed to record attendance: {error}")
+                        st.error(f"Failed to submit leave request: {error}")
                     else:
-                        st.success(f"Attendance recorded successfully! ID: {attendance_id}")
+                        st.success(f"Leave request submitted successfully from {start_date.strftime('%d-%m-%Y')} to {end_date.strftime('%d-%m-%Y')}")
                         st.balloons()
                         st.rerun()
-        else:
-            st.info("Today's attendance already marked. Use the 'Apply for Leave' tab for future dates.")
-    
-    with tab2:
-        st.subheader("Apply for Leave")
-        
-        tomorrow = get_ist_time().date() + timedelta(days=1)
-        col1, col2 = st.columns(2)
-        with col1:
-            start_date = st.date_input(
-                "Start Date*",
-                min_value=tomorrow,
-                value=tomorrow,
-                help="Select the first day of your leave (must be future date)"
-            )
-        with col2:
-            end_date = st.date_input(
-                "End Date*",
-                min_value=tomorrow,
-                help="Select the last day of your leave"
-            )
-        
-        if start_date > end_date:
-            st.error("End date must be after start date")
-        
-        leave_types = ["Sick Leave", "Personal Leave", "Vacation", "Other"]
-        leave_type = st.selectbox("Leave Type*", leave_types, key="leave_type")
-        
-        leave_reason = st.text_area(
-            "Reason for Leave*",
-            placeholder="Please provide details about your leave",
-            key="leave_reason"
-        )
-        
-        if st.button("Submit Leave Request", key="submit_leave"):
-            if not leave_reason:
-                st.error("Please provide a reason for your leave")
-            elif start_date > end_date:
-                st.error("End date must be after start date")
-            else:
-                # Check if these dates already have leave applied
-                existing_leave = check_existing_leave(selected_employee, start_date, end_date)
-                if existing_leave:
-                    st.error("You already have leave applied for some or all of these dates")
-                else:
-                    with st.spinner("Submitting leave request..."):
-                        leave_id, error = record_future_leave(
-                            selected_employee,
-                            start_date,
-                            end_date,
-                            leave_type,
-                            leave_reason
-                        )
-                        
-                        if error:
-                            st.error(f"Failed to submit leave request: {error}")
-                        else:
-                            st.success(f"Leave request submitted successfully from {start_date.strftime('%d-%m-%Y')} to {end_date.strftime('%d-%m-%Y')}")
-                            st.balloons()
-                            st.rerun()
 
 def main():
     if 'authenticated' not in st.session_state:
@@ -731,7 +723,7 @@ def main():
                         st.error("Invalid Password. Please try again.")
     else:
         st.title("Select Mode")
-        col1, col2, col3 = st.columns(3)  # Now 3 columns for the new mode
+        col1, col2, col3 = st.columns(3)
         
         with col1:
             if st.button("Attendance", use_container_width=True, key="attendance_mode"):
