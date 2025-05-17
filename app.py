@@ -755,7 +755,8 @@ def attendance_page():
     st.markdown("---")
     
     # Check if attendance is already marked for today
-    if check_existing_attendance(selected_employee):
+    today_marked = check_existing_attendance(selected_employee)
+    if today_marked:
         # Check if checkout is already done
         if check_existing_checkout(selected_employee):
             st.warning("You have already marked your attendance and checkout for today.")
@@ -774,12 +775,13 @@ def attendance_page():
                         st.success(f"Checkout recorded successfully! ID: {attendance_id}")
                         st.balloons()
                         st.rerun()
-    else:
-        # Main attendance options
-        tab1, tab2 = st.tabs(["Mark Today's Attendance", "Apply for Leave"])
-        
-        with tab1:
-            st.subheader("Mark Your Attendance")
+    
+    # Main attendance options - separate tabs
+    tab1, tab2 = st.tabs(["Today's Attendance", "Apply for Leave"])
+    
+    with tab1:
+        if not today_marked:
+            st.subheader("Mark Today's Attendance")
             
             if st.button("Check-in", key="checkin_button"):
                 with st.spinner("Recording attendance..."):
@@ -791,60 +793,64 @@ def attendance_page():
                         st.success(f"Attendance recorded successfully! ID: {attendance_id}")
                         st.balloons()
                         st.rerun()
+        else:
+            st.info("Today's attendance already marked. Use the 'Apply for Leave' tab for future dates.")
+    
+    with tab2:
+        st.subheader("Apply for Leave")
         
-        with tab2:
-            st.subheader("Apply for Leave")
-            
-            with st.form("leave_form"):
-                col1, col2 = st.columns(2)
-                with col1:
-                    start_date = st.date_input(
-                        "Start Date",
-                        min_value=get_ist_time().date(),
-                        help="Select the first day of your leave"
-                    )
-                with col2:
-                    end_date = st.date_input(
-                        "End Date",
-                        min_value=get_ist_time().date(),
-                        help="Select the last day of your leave"
-                    )
-                
-                if start_date > end_date:
-                    st.error("End date must be after start date")
-                
-                leave_types = ["Sick Leave", "Personal Leave", "Vacation", "Other"]
-                leave_type = st.selectbox("Leave Type", leave_types, key="leave_type")
-                
-                leave_reason = st.text_area(
-                    "Reason for Leave",
-                    placeholder="Please provide details about your leave",
-                    key="leave_reason"
+        with st.form("leave_form"):
+            tomorrow = get_ist_time().date() + timedelta(days=1)
+            col1, col2 = st.columns(2)
+            with col1:
+                start_date = st.date_input(
+                    "Start Date",
+                    min_value=tomorrow,
+                    value=tomorrow,
+                    help="Select the first day of your leave (must be future date)"
                 )
-                
-                submitted = st.form_submit_button("Submit Leave Request")
-                
-                if submitted:
-                    if not leave_reason:
-                        st.error("Please provide a reason for your leave")
-                    elif start_date > end_date:
-                        st.error("End date must be after start date")
-                    else:
-                        with st.spinner("Submitting leave request..."):
-                            leave_id, error = record_future_leave(
-                                selected_employee,
-                                start_date,
-                                end_date,
-                                leave_type,
-                                leave_reason
-                            )
-                            
-                            if error:
-                                st.error(f"Failed to submit leave request: {error}")
-                            else:
-                                st.success(f"Leave request submitted successfully from {start_date.strftime('%d-%m-%Y')} to {end_date.strftime('%d-%m-%Y')}")
-                                st.balloons()
-                                st.rerun()
+            with col2:
+                end_date = st.date_input(
+                    "End Date",
+                    min_value=tomorrow,
+                    help="Select the last day of your leave"
+                )
+            
+            if start_date > end_date:
+                st.error("End date must be after start date")
+            
+            leave_types = ["Sick Leave", "Personal Leave", "Vacation", "Other"]
+            leave_type = st.selectbox("Leave Type", leave_types, key="leave_type")
+            
+            leave_reason = st.text_area(
+                "Reason for Leave",
+                placeholder="Please provide details about your leave",
+                key="leave_reason"
+            )
+            
+            submitted = st.form_submit_button("Submit Leave Request")
+            
+            if submitted:
+                if not leave_reason:
+                    st.error("Please provide a reason for your leave")
+                elif start_date > end_date:
+                    st.error("End date must be after start date")
+                else:
+                    with st.spinner("Submitting leave request..."):
+                        leave_id, error = record_future_leave(
+                            selected_employee,
+                            start_date,
+                            end_date,
+                            leave_type,
+                            leave_reason
+                        )
+                        
+                        if error:
+                            st.error(f"Failed to submit leave request: {error}")
+                        else:
+                            st.success(f"Leave request submitted successfully from {start_date.strftime('%d-%m-%Y')} to {end_date.strftime('%d-%m-%Y')}")
+                            st.balloons()
+                            st.rerun()
 
 def main():
     if 'authenticated' not in st.session_state:
