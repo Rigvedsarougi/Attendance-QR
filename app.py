@@ -511,9 +511,9 @@ def announcements_page():
     # Define the announcements (you can also load this from a JSON file or Google Sheet)
     announcements = [
         {
-            "Heading": "Biolume Day",
+            "Heading": "Ansh Birthay",
             "Date": "30/05/2025",
-            "Description": "Join us for our annual Biolume Day celebration with special events and activities.",
+            "Description": "Join us Ansh Birthay celebration with special events and activities Sponsored by Ansh ONLY.",
             "file_path": "ALLGEN TRADING logo.png"
         },
         {
