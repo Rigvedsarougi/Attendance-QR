@@ -24,7 +24,7 @@ def display_login_header():
     with col2:
         try:
             logo = Image.open("logo.png")
-            st.image(logo, use_column_width=True)
+            st.image(logo, use_container_width=True)
         except FileNotFoundError:
             st.warning("Logo image not found. Please ensure 'logo.png' exists in the same directory.")
         except Exception as e:
@@ -64,7 +64,7 @@ hide_footer_style = """
 """
 st.markdown(hide_footer_style, unsafe_allow_html=True)
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=300)  # Cache for 5 minutes
 def load_gsheet_data():
     """Load all required data from Google Sheets"""
     try:
@@ -113,12 +113,13 @@ ATTENDANCE_SHEET_COLUMNS = [
     "Total Working Hours"
 ]
 
+# Authentication function
 def authenticate_employee(employee_name, passkey):
     try:
         employee_row = Person[Person['Employee Name'] == employee_name]
         if not employee_row.empty:
-            employee_code = str(employee_row['Employee Code'].values[0])
-            return str(passkey) == employee_code
+            employee_code = employee_row['Employee Code'].values[0]
+            return str(passkey) == str(employee_code)
         return False
     except Exception as e:
         st.error(f"Authentication error: {e}")
@@ -137,10 +138,10 @@ def check_existing_attendance(employee_name, date=None):
         else:
             current_date = date.strftime("%d-%m-%Y")
             
-        employee_code = str(Person[Person['Employee Name'] == employee_name]['Employee Code'].values[0])
+        employee_code = Person[Person['Employee Name'] == employee_name]['Employee Code'].values[0]
         
         existing_records = existing_data[
-            (existing_data['Employee Code'].astype(str) == employee_code) & 
+            (existing_data['Employee Code'] == employee_code) & 
             (existing_data['Date'] == current_date)
         ]
         
@@ -159,12 +160,11 @@ def check_existing_checkout(employee_name):
             return False
         
         current_date = get_ist_time().strftime("%d-%m-%Y")
-        employee_code = str(Person[Person['Employee Name'] == employee_name]['Employee Code'].values[0])
+        employee_code = Person[Person['Employee Name'] == employee_name]['Employee Code'].values[0]
         
         existing_records = existing_data[
-            (existing_data['Employee Code'].astype(str) == employee_code) & 
+            (existing_data['Employee Code'] == employee_code) & 
             (existing_data['Date'] == current_date) &
-            (existing_data['Check-out Time'].notna()) &
             (existing_data['Check-out Time'] != '')
         ]
         
@@ -182,17 +182,20 @@ def check_existing_leave(employee_name, start_date, end_date):
         if existing_data.empty:
             return False
         
-        employee_code = str(Person[Person['Employee Name'] == employee_name]['Employee Code'].values[0])
+        employee_code = Person[Person['Employee Name'] == employee_name]['Employee Code'].values[0]
         
+        # Create date range to check
         date_range = pd.date_range(start=start_date, end=end_date)
         
+        # Check each date in the range
         for date in date_range:
-            if date.weekday() >= 6:
+            # Skip weekends
+            if date.weekday() >= 5:
                 continue
                 
             formatted_date = date.strftime("%d-%m-%Y")
             existing_records = existing_data[
-                (existing_data['Employee Code'].astype(str) == employee_code) & 
+                (existing_data['Employee Code'] == employee_code) & 
                 (existing_data['Date'] == formatted_date) &
                 (existing_data['Status'] == "Leave")
             ]
@@ -204,7 +207,7 @@ def check_existing_leave(employee_name, start_date, end_date):
         
     except Exception as e:
         st.error(f"Error checking existing leave: {str(e)}")
-        return True
+        return True  # Return True to be safe and prevent duplicate submission
 
 def generate_attendance_id():
     return f"ATT-{get_ist_time().strftime('%Y%m%d%H%M%S')}-{str(uuid.uuid4())[:4].upper()}"
@@ -220,20 +223,22 @@ def log_attendance_to_gsheet(conn, attendance_data):
         updated_data = updated_data.drop_duplicates(subset=["Attendance ID"], keep="last")
         
         conn.update(worksheet="Attendance", data=updated_data)
-        st.cache_data.clear()
         return True, None
     except Exception as e:
         return False, str(e)
 
 def calculate_working_hours(check_in, check_out):
     try:
+        # Parse the time strings into datetime objects
         fmt = "%H:%M:%S"
         check_in_dt = datetime.strptime(check_in, fmt)
         check_out_dt = datetime.strptime(check_out, fmt)
         
+        # Calculate the difference
         delta = check_out_dt - check_in_dt
         total_seconds = delta.total_seconds()
         
+        # Convert to hours
         hours = total_seconds / 3600
         return round(hours, 2)
     except Exception as e:
@@ -242,17 +247,21 @@ def calculate_working_hours(check_in, check_out):
 
 def determine_status(check_in_time_str, check_out_time_str=None):
     try:
+        # Parse check-in time
         check_in_time = datetime.strptime(check_in_time_str, "%H:%M:%S").time()
         
+        # Define time thresholds
         mini_half_day_start = time(10, 30)
         half_day_start = time(11, 30)
         early_checkout = time(17, 0)
         
+        # Determine status based on check-in time
         if check_in_time >= half_day_start:
             return "Half Day"
         elif check_in_time >= mini_half_day_start:
             return "Mini Half Day"
         
+        # If check-out time is provided, check for early checkout
         if check_out_time_str:
             check_out_time = datetime.strptime(check_out_time_str, "%H:%M:%S").time()
             if check_out_time < early_checkout:
@@ -265,44 +274,51 @@ def determine_status(check_in_time_str, check_out_time_str=None):
 
 def record_attendance(employee_name, status=None, leave_reason="", is_checkout=False):
     try:
-        employee_code = str(Person[Person['Employee Name'] == employee_name]['Employee Code'].values[0])
+        employee_code = Person[Person['Employee Name'] == employee_name]['Employee Code'].values[0]
         designation = Person[Person['Employee Name'] == employee_name]['Designation'].values[0]
         current_date = get_ist_time().strftime("%d-%m-%Y")
         current_datetime = get_ist_time().strftime("%d-%m-%Y %H:%M:%S")
         current_time = get_ist_time().strftime("%H:%M:%S")
         
         if is_checkout:
+            # Update existing attendance record with checkout time
             existing_data = conn.read(worksheet="Attendance", usecols=list(range(len(ATTENDANCE_SHEET_COLUMNS))), ttl=5)
             existing_data = existing_data.dropna(how='all')
             
             today_record = existing_data[
-                (existing_data['Employee Code'].astype(str) == employee_code) & 
+                (existing_data['Employee Code'] == employee_code) & 
                 (existing_data['Date'] == current_date)
             ]
             
             if not today_record.empty:
                 attendance_id = today_record.iloc[0]['Attendance ID']
-                today_record_index = today_record.index[0]
                 
-                existing_data.at[today_record_index, 'Check-out Time'] = current_time
-                existing_data.at[today_record_index, 'Check-out Date Time'] = current_datetime
+                # Update the record
+                today_record.at[today_record.index[0], 'Check-out Time'] = current_time
+                today_record.at[today_record.index[0], 'Check-out Date Time'] = current_datetime
                 
-                check_in_time = existing_data.at[today_record_index, 'Check-in Time']
-                if pd.notna(check_in_time) and check_in_time != '':
-                    working_hours = calculate_working_hours(check_in_time, current_time)
-                    existing_data.at[today_record_index, 'Total Working Hours'] = working_hours
-                    
-                    final_status = determine_status(check_in_time, current_time)
-                    existing_data.at[today_record_index, 'Status'] = final_status
+                # Calculate working hours
+                check_in_time = today_record.iloc[0]['Check-in Time']
+                working_hours = calculate_working_hours(check_in_time, current_time)
+                today_record.at[today_record.index[0], 'Total Working Hours'] = working_hours
                 
-                conn.update(worksheet="Attendance", data=existing_data)
-                st.cache_data.clear()
+                # Determine final status based on check-in and check-out times
+                final_status = determine_status(check_in_time, current_time)
+                today_record.at[today_record.index[0], 'Status'] = final_status
+                
+                # Update the sheet
+                updated_data = existing_data.copy()
+                updated_data.update(today_record)
+                conn.update(worksheet="Attendance", data=updated_data)
+                
                 return attendance_id, None
             else:
                 return None, "No attendance record found for today to checkout"
         else:
+            # Create new attendance record
             attendance_id = generate_attendance_id()
             
+            # Determine status if not provided (for leave)
             if status is None:
                 status = determine_status(current_time)
             
@@ -335,20 +351,25 @@ def record_attendance(employee_name, status=None, leave_reason="", is_checkout=F
 
 def record_future_leave(employee_name, start_date, end_date, leave_type, leave_reason):
     try:
-        employee_code = str(Person[Person['Employee Name'] == employee_name]['Employee Code'].values[0])
+        employee_code = Person[Person['Employee Name'] == employee_name]['Employee Code'].values[0]
         designation = Person[Person['Employee Name'] == employee_name]['Designation'].values[0]
         
+        # Generate a single leave ID for this leave request
         leave_id = f"LEAVE-{get_ist_time().strftime('%Y%m%d%H%M%S')}-{str(uuid.uuid4())[:4].upper()}"
         
+        # Create a date range
         date_range = pd.date_range(start=start_date, end=end_date)
         
         attendance_records = []
         
         for date in date_range:
-            if date.weekday() >= 6:
+            # Skip weekends (Saturday=5, Sunday=6)
+            if date.weekday() >= 5:
                 continue
                 
+            # Format the date
             formatted_date = date.strftime("%d-%m-%Y")
+            
             attendance_id = f"{leave_id}-{date.strftime('%Y%m%d')}"
             
             attendance_data = {
@@ -393,11 +414,12 @@ def get_attendance_stats(employee_name):
                 "total_working_hours": 0
             }
         
-        employee_code = str(Person[Person['Employee Name'] == employee_name]['Employee Code'].values[0])
+        employee_code = Person[Person['Employee Name'] == employee_name]['Employee Code'].values[0]
         current_month = get_ist_time().strftime("%m-%Y")
         
+        # Filter for current month and employee
         employee_data = existing_data[
-            (existing_data['Employee Code'].astype(str) == employee_code) & 
+            (existing_data['Employee Code'] == employee_code) & 
             (existing_data['Date'].str.endswith(current_month))
         ]
         
@@ -410,16 +432,15 @@ def get_attendance_stats(employee_name):
                 "total_working_hours": 0
             }
         
+        # Calculate stats
         present = len(employee_data[employee_data['Status'] == "Present"])
         half_day = len(employee_data[employee_data['Status'] == "Half Day"])
         mini_half_day = len(employee_data[employee_data['Status'] == "Mini Half Day"])
         leave = len(employee_data[employee_data['Status'] == "Leave"])
         
-        working_hours_data = employee_data[employee_data['Total Working Hours'].notna()]
-        if not working_hours_data.empty:
-            total_hours = working_hours_data['Total Working Hours'].astype(float).sum()
-        else:
-            total_hours = 0
+        # Calculate total working hours (only for days with check-out)
+        working_hours_data = employee_data[employee_data['Total Working Hours'] != '']
+        total_hours = working_hours_data['Total Working Hours'].astype(float).sum()
         
         return {
             "present": present,
@@ -443,6 +464,7 @@ def resources_page():
     st.title("Company Resources")
     st.markdown("Download important company documents and product catalogs.")
     
+    # Define the resources
     resources = [
         {
             "name": "Product Catalogue",
@@ -461,11 +483,13 @@ def resources_page():
         }
     ]
     
+    # Display each resource in a card-like format
     for resource in resources:
         with st.container():
             st.subheader(resource["name"])
             st.markdown(resource["description"])
             
+            # Check if file exists
             if os.path.exists(resource["file_path"]):
                 with open(resource["file_path"], "rb") as file:
                     btn = st.download_button(
@@ -478,18 +502,19 @@ def resources_page():
             else:
                 st.error(f"File not found: {resource['file_path']}")
             
-            st.markdown("---")
+            st.markdown("---")  # Divider between resources
 
 def announcements_page():
     st.title("Company Announcements")
     st.markdown("Stay updated with the latest company news and announcements.")
     
+    # Define the announcements (you can also load this from a JSON file or Google Sheet)
     announcements = [
         {
-            "Heading": "Ansh Birthay",
+            "Heading": "Biolume Day",
             "Date": "30/05/2025",
-            "Description": "Join us Ansh Birthay celebration with special events and activities Sponsored by Ansh ONLY.",
-            "file_path": "ALLGEN TRADING logo.png"
+            "Description": "Join us for our annual Biolume Day celebration with special events and activities.",
+            "file_path": "biolume.png"
         },
         {
             "Heading": "Office Closure",
@@ -505,11 +530,14 @@ def announcements_page():
         }
     ]
     
+    # Display each announcement in a card-like format
     for announcement in announcements:
         with st.container():
+            # Create columns for layout (image on left, text on right)
             col1, col2 = st.columns([1, 3])
             
             with col1:
+                # Display image if available
                 if os.path.exists(announcement["file_path"]):
                     try:
                         image = Image.open(announcement["file_path"])
@@ -524,7 +552,7 @@ def announcements_page():
                 st.caption(f"Date: {announcement['Date']}")
                 st.write(announcement["Description"])
             
-            st.markdown("---")
+            st.markdown("---")  # Divider between announcements
 
 def add_back_button():
     st.markdown("""
@@ -541,12 +569,13 @@ def add_back_button():
     if st.button("← logout", key="back_button"):
         st.session_state.authenticated = False
         st.session_state.selected_mode = None
-        st.experimental_rerun()
+        st.rerun()
 
 def attendance_page():
     st.title("Attendance Management")
     selected_employee = st.session_state.employee_name
     
+    # Display attendance stats for current month
     stats = get_attendance_stats(selected_employee)
     st.subheader("This Month's Attendance Summary")
     
@@ -559,10 +588,11 @@ def attendance_page():
     
     st.markdown("---")
     
+    # Check if attendance is already marked for today
     today_marked = check_existing_attendance(selected_employee)
     if today_marked:
-        checkout_done = check_existing_checkout(selected_employee)
-        if checkout_done:
+        # Check if checkout is already done
+        if check_existing_checkout(selected_employee):
             st.warning("You have already marked your attendance and checkout for today.")
         else:
             st.info("You have already marked your attendance for today.")
@@ -578,8 +608,9 @@ def attendance_page():
                     else:
                         st.success(f"Checkout recorded successfully! ID: {attendance_id}")
                         st.balloons()
-                        st.experimental_rerun()
+                        st.rerun()  # Fixed: Changed from experimental_rerun to rerun
     
+    # Main attendance options - separate tabs
     tab1, tab2 = st.tabs(["Today's Attendance", "Apply for Leave"])
     
     with tab1:
@@ -595,7 +626,7 @@ def attendance_page():
                     else:
                         st.success(f"Attendance recorded successfully! ID: {attendance_id}")
                         st.balloons()
-                        st.experimental_rerun()
+                        st.rerun()  # Fixed: Changed from experimental_rerun to rerun
         else:
             st.info("Today's attendance already marked. Use the 'Apply for Leave' tab for future dates.")
     
@@ -636,6 +667,7 @@ def attendance_page():
             elif start_date > end_date:
                 st.error("End date must be after start date")
             else:
+                # Check if these dates already have leave applied
                 existing_leave = check_existing_leave(selected_employee, start_date, end_date)
                 if existing_leave:
                     st.error("You already have leave applied for some or all of these dates")
@@ -654,8 +686,7 @@ def attendance_page():
                         else:
                             st.success(f"Leave request submitted successfully from {start_date.strftime('%d-%m-%Y')} to {end_date.strftime('%d-%m-%Y')}")
                             st.balloons()
-                            st.experimental_rerun()
-
+                            st.rerun()  # Fixed: Changed from experimental_rerun to rerun
 def main():
     if 'authenticated' not in st.session_state:
         st.session_state.authenticated = False
@@ -694,27 +725,27 @@ def main():
                     if authenticate_employee(employee_name, passkey):
                         st.session_state.authenticated = True
                         st.session_state.employee_name = employee_name
-                        st.experimental_rerun()
+                        st.rerun()
                     else:
                         st.error("Invalid Password. Please try again.")
     else:
         st.title("Select Mode")
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3 = st.columns(3)  # Now 3 columns for the new mode
         
         with col1:
             if st.button("Attendance", use_container_width=True, key="attendance_mode"):
                 st.session_state.selected_mode = "Attendance"
-                st.experimental_rerun()
+                st.rerun()
                 
         with col2:
             if st.button("Resources", use_container_width=True, key="resources_mode"):
                 st.session_state.selected_mode = "Resources"
-                st.experimental_rerun()
+                st.rerun()
         
         with col3:
             if st.button("Announcements", use_container_width=True, key="announcements_mode"):
                 st.session_state.selected_mode = "Announcements"
-                st.experimental_rerun()
+                st.rerun()
         
         if st.session_state.selected_mode:
             add_back_button()
