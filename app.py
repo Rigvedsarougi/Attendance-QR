@@ -460,34 +460,6 @@ def get_attendance_stats(employee_name):
             "total_working_hours": 0
         }
 
-def get_today_attendance_status(employee_name):
-    try:
-        existing_data = conn.read(worksheet="Attendance", usecols=list(range(len(ATTENDANCE_SHEET_COLUMNS))), ttl=5)
-        existing_data = existing_data.dropna(how='all')
-        
-        if existing_data.empty:
-            return None
-        
-        current_date = get_ist_time().strftime("%d-%m-%Y")
-        employee_code = Person[Person['Employee Name'] == employee_name]['Employee Code'].values[0]
-        
-        today_record = existing_data[
-            (existing_data['Employee Code'] == employee_code) & 
-            (existing_data['Date'] == current_date)
-        ]
-        
-        if not today_record.empty:
-            return {
-                "check_in_time": today_record.iloc[0]['Check-in Time'],
-                "check_out_time": today_record.iloc[0]['Check-out Time'],
-                "status": today_record.iloc[0]['Status']
-            }
-        return None
-        
-    except Exception as e:
-        st.error(f"Error getting today's attendance status: {str(e)}")
-        return None
-
 def resources_page():
     st.title("Company Resources")
     st.markdown("Download important company documents and product catalogs.")
@@ -616,51 +588,47 @@ def attendance_page():
     
     st.markdown("---")
     
-    # Check today's attendance status
-    today_status = get_today_attendance_status(selected_employee)
+    # Check if attendance is already marked for today
+    today_marked = check_existing_attendance(selected_employee)
+    if today_marked:
+        # Check if checkout is already done
+        if check_existing_checkout(selected_employee):
+            st.warning("You have already marked your attendance and checkout for today.")
+        else:
+            st.info("You have already marked your attendance for today.")
+            if st.button("Mark Check-out", key="checkout_button"):
+                with st.spinner("Recording checkout..."):
+                    attendance_id, error = record_attendance(
+                        selected_employee,
+                        is_checkout=True
+                    )
+                    
+                    if error:
+                        st.error(f"Failed to record checkout: {error}")
+                    else:
+                        st.success(f"Checkout recorded successfully! ID: {attendance_id}")
+                        st.balloons()
+                        st.rerun()
     
     # Main attendance options - separate tabs
     tab1, tab2 = st.tabs(["Today's Attendance", "Apply for Leave"])
     
     with tab1:
-        st.subheader("Today's Attendance Status")
-        
-        if today_status:
-            col1, col2 = st.columns(2)
-            col1.metric("Check-in Time", today_status['check_in_time'] or "Not recorded")
-            col2.metric("Check-out Time", today_status['check_out_time'] or "Not recorded")
+        if not today_marked:
+            st.subheader("Mark Today's Attendance")
             
-            st.metric("Current Status", today_status['status'])
-            
-            if today_status['check_out_time']:
-                st.success("You have completed your attendance for today!")
-            else:
-                if st.button("Mark Check-out", key="checkout_button", type="primary"):
-                    with st.spinner("Recording checkout..."):
-                        attendance_id, error = record_attendance(
-                            selected_employee,
-                            is_checkout=True
-                        )
-                        
-                        if error:
-                            st.error(f"Failed to record checkout: {error}")
-                        else:
-                            st.success(f"Checkout recorded successfully at {get_ist_time().strftime('%H:%M:%S')}")
-                            st.balloons()
-                            st.rerun()
-        else:
-            st.info("You haven't marked your attendance for today yet.")
-            
-            if st.button("Check-in Now", key="checkin_button", type="primary"):
+            if st.button("Check-in", key="checkin_button"):
                 with st.spinner("Recording attendance..."):
                     attendance_id, error = record_attendance(selected_employee)
                     
                     if error:
                         st.error(f"Failed to record attendance: {error}")
                     else:
-                        st.success(f"Check-in recorded successfully at {get_ist_time().strftime('%H:%M:%S')}")
+                        st.success(f"Attendance recorded successfully! ID: {attendance_id}")
                         st.balloons()
                         st.rerun()
+        else:
+            st.info("Today's attendance already marked. Use the 'Apply for Leave' tab for future dates.")
     
     with tab2:
         st.subheader("Apply for Leave")
