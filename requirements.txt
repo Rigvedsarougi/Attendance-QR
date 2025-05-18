@@ -20,5 +20,8 @@ streamlit-bokeh-events
 bokeh
 googlemaps
 geopy
+bokeh
+streamlit-bokeh-events
+qrcode[pil]
 pillow
-pyzbar
+pytz
