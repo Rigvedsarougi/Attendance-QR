@@ -20,3 +20,5 @@ streamlit-bokeh-events
 bokeh
 googlemaps
 geopy
+pillow
+pyzbar
