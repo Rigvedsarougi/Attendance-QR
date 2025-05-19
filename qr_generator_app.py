@@ -1,93 +1,75 @@
-# qr_generator_app.py
-
 import streamlit as st
-st.set_page_config(page_title="QR Generator", layout="centered")
-
 from bokeh.models.widgets import Button
 from bokeh.models import CustomJS
 from streamlit_bokeh_events import streamlit_bokeh_events
-import uuid
 import qrcode
-from io import BytesIO
-import pytz
-from datetime import datetime
+from PIL import Image
+import io
 
-st.title("🔍 QR Code Generator with Location")
 
-# 1) Button to capture browser geolocation via JS
-loc_button = Button(label="Get My Location")
-loc_button.js_on_event(
-    "button_click",
-    CustomJS(code="""
+def main():
+    # Set up page
+    st.set_page_config(page_title="QR Generator", layout="centered")
+    st.title("🔍 QR Code Generator with Location")
+
+    # Create a button to fetch geolocation
+    loc_button = Button(label="Get Current Location")
+    loc_button.js_on_event("button_click", CustomJS(code="""
         navigator.geolocation.getCurrentPosition(
             (loc) => {
-                document.dispatchEvent(
-                    new CustomEvent("GET_LOCATION", {
-                        detail: {
-                            lat: loc.coords.latitude,
-                            lon: loc.coords.longitude
-                        }
-                    })
-                )
-            },
-            (err) => {
-                document.dispatchEvent(
-                    new CustomEvent("GEO_ERROR", { detail: err.message })
-                )
+                document.dispatchEvent(new CustomEvent("GET_LOCATION", {
+                    detail: {lat: loc.coords.latitude, lon: loc.coords.longitude}
+                }))
             }
         )
-    """),
-)
+        """))
 
-# 2) Listen for events
-evt = streamlit_bokeh_events(
-    loc_button,
-    events=["GET_LOCATION", "GEO_ERROR"],
-    key="geo",
-    refresh_on_update=True,
-    override_height=75,
-    debounce_time=0,
-)
+    # Listen for the GET_LOCATION event
+    result = streamlit_bokeh_events(
+        loc_button,
+        events="GET_LOCATION",
+        key="get_location",
+        refresh_on_update=False,
+        override_height=75,
+        debounce_time=0,
+    )
 
-if evt:
-    # 3a) Error case
-    if "GEO_ERROR" in evt:
-        st.error(f"Error obtaining location: {evt['GEO_ERROR']['detail']}")
-    # 3b) Success case
-    elif "GET_LOCATION" in evt:
-        lat = evt["GET_LOCATION"]["lat"]
-        lon = evt["GET_LOCATION"]["lon"]
-        st.success(f"Location captured: {lat:.6f}, {lon:.6f}")
+    # When location is received, generate QR code
+    if result and "GET_LOCATION" in result:
+        loc_data = result["GET_LOCATION"]
+        lat = loc_data.get('lat')
+        lon = loc_data.get('lon')
+        st.success(f"Location received: Latitude: {lat}, Longitude: {lon}")
 
-        # 4) Generate a unique code
-        unique_code = str(uuid.uuid4())
-        st.write(f"🔑 **Your unique code:** `{unique_code}`")
+        # Construct a Google Maps URL with the coordinates
+        maps_url = f"https://www.google.com/maps?q={lat},{lon}"
 
-        # 5) Bundle into a payload
-        payload = {
-            "code": unique_code,
-            "latitude": lat,
-            "longitude": lon,
-            "timestamp": datetime.now(pytz.timezone("Asia/Kolkata")).isoformat()
-        }
-
-        # 6) Build the QR
-        qr = qrcode.QRCode(version=1, box_size=8, border=4)
-        qr.add_data(payload)
+        # Generate QR code
+        qr = qrcode.QRCode(
+            version=1,
+            box_size=10,
+            border=4
+        )
+        qr.add_data(maps_url)
         qr.make(fit=True)
         img = qr.make_image(fill_color="black", back_color="white")
 
-        # 7) Display & let user download
-        buf = BytesIO()
-        img.save(buf, format="PNG")
-        buf.seek(0)
+        # Display the QR code
+        st.image(img, caption="Scan to view location on map", use_column_width=True)
 
-        st.image(buf, caption="📲 Scan this QR to read your code & location")
+        # Prepare image for download
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        byte_im = buf.getvalue()
+
+        # Download button
         st.download_button(
-            "⬇️ Download QR Code",
-            data=buf,
-            file_name="my_qr_code.png",
-            mime="image/png",
+            label="Download QR code",
+            data=byte_im,
+            file_name="location_qr.png",
+            mime="image/png"
         )
-else:
-    st.info("Click **Get My Location** to generate your QR code.")
+
+
+if __name__ == "__main__":
+    main()
