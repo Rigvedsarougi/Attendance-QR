@@ -35,12 +35,13 @@ def display_login_header():
         """, unsafe_allow_html=True)
 
 
+
 hide_streamlit_style = """
     <style>
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
-    .stActionButton > button[title="Open source on GitHub"] {visibility: hidden;}
     header {visibility: hidden;}
+    .stActionButton > button[title="Open source on GitHub"] {visibility: hidden;}
     </style>
 """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
@@ -291,6 +292,7 @@ Products = pd.read_csv('Invoice - Products.csv')
 Outlet = pd.read_csv('Invoice - Outlet.csv')
 Person = pd.read_csv('Invoice - Person.csv')
 Distributors = pd.read_csv('Invoice - Distributors.csv')
+citystate = pd.read_csv('India City - State.csv')
 
 # Company Details with ALLGEN TRADING logo
 company_name = "BIOLUME SKIN SCIENCE PRIVATE LIMITED"
@@ -361,46 +363,47 @@ def save_uploaded_file(uploaded_file, folder):
 def demo_page():
     st.title("Demo Management")
     selected_employee = st.session_state.employee_name
-    
+
     tab1, tab2 = st.tabs(["New Demo", "Demo History"])
-    
+
+    # --- New Demo Tab ---
     with tab1:
         st.subheader("Partner Employee")
         partner_employee = st.selectbox(
-            "Select Partner Employee", 
-            [name for name in Person['Employee Name'].tolist() if name != selected_employee],
+            "Select Partner Employee",
+            [n for n in Person['Employee Name'] if n != selected_employee],
             key="partner_employee"
         )
 
         st.subheader("Outlet Details")
-        outlet_option = st.radio("Outlet Selection", ["Select from list", "Enter manually"], key="demo_outlet_option")
-        
+        outlet_option = st.radio("Outlet Selection", ["Enter manually", "Select from list"], key="demo_outlet_option")
         if outlet_option == "Select from list":
             outlet_names = Outlet['Shop Name'].tolist()
             selected_outlet = st.selectbox("Select Outlet", outlet_names, key="demo_outlet_select")
-            outlet_details = Outlet[Outlet['Shop Name'] == selected_outlet].iloc[0]
-            
-            outlet_name = selected_outlet
-            outlet_contact = outlet_details['Contact']
-            outlet_address = outlet_details['Address']
-            outlet_state = outlet_details['State']
-            outlet_city = outlet_details['City']
-            
-            st.text_input("Outlet Contact", value=outlet_contact, disabled=True, key="demo_outlet_contact_display")
-            st.text_input("Outlet Address", value=outlet_address, disabled=True, key="demo_outlet_address_display")
-            st.text_input("Outlet State", value=outlet_state, disabled=True, key="demo_outlet_state_display")
-            st.text_input("Outlet City", value=outlet_city, disabled=True, key="demo_outlet_city_display")
+            od = Outlet[Outlet['Shop Name'] == selected_outlet].iloc[0]
+            outlet_name, outlet_contact = selected_outlet, od['Contact']
+            outlet_address, outlet_state, outlet_city = od['Address'], od['State'], od['City']
+            st.text_input("Contact", value=outlet_contact, disabled=True, key="demo_outlet_contact_display")
+            st.text_input("Address", value=outlet_address, disabled=True, key="demo_outlet_address_display")
+            st.text_input("State", value=outlet_state, disabled=True, key="demo_outlet_state_display")
+            st.text_input("City", value=outlet_city, disabled=True, key="demo_outlet_city_display")
         else:
-            outlet_name = st.text_input("Outlet Name", key="demo_outlet_name")
+            outlet_name    = st.text_input("Outlet Name", key="demo_outlet_name")
             outlet_contact = st.text_input("Outlet Contact", key="demo_outlet_contact")
             outlet_address = st.text_area("Outlet Address", key="demo_outlet_address")
-            outlet_state = st.text_input("Outlet State", "", key="demo_outlet_state")
-            outlet_city = st.text_input("Outlet City", "", key="demo_outlet_city")
+            
+            # State and City Dropdowns
+            unique_states = sorted(citystate['State'].unique())
+            outlet_state = st.selectbox("State", unique_states, key="demo_outlet_state")
+            
+            # Filter cities based on selected state
+            cities_in_state = sorted(citystate[citystate['State'] == outlet_state]['City'].unique())
+            outlet_city = st.selectbox("City", cities_in_state, key="demo_outlet_city")
 
         st.subheader("Demo Details")
-        demo_date = st.date_input("Demo Date", key="demo_date")
+        demo_date     = st.date_input("Demo Date", key="demo_date")
         outlet_review = st.selectbox("Outlet Review", ["Excellent", "Good", "Average", "Poor"], key="outlet_review")
-        remarks = st.text_area("Remarks", key="demo_remarks")
+        remarks       = st.text_area("Remarks", key="demo_remarks")
 
         st.subheader("Time Tracking")
         col1, col2 = st.columns(2)
@@ -409,223 +412,153 @@ def demo_page():
         with col2:
             check_out_time = st.time_input("Check-out Time", value=None, key="demo_check_out_time")
 
-        st.subheader("Product Demonstration")
-        product_names = Products['Product Name'].tolist()
-        selected_products = st.multiselect("Select Products Demonstrated", product_names, key="demo_product_selection")
-
-        quantities = []
+        st.subheader("Products Demonstrated")
+        product_names      = Products['Product Name'].tolist()
+        selected_products  = st.multiselect("Select Products Demonstrated", product_names, key="demo_product_selection")
+        quantities         = []
         if selected_products:
             st.markdown("### Product Quantities")
-            for idx, product in enumerate(selected_products):
-                qty = st.number_input(
-                    f"Quantity for {product}",
-                    min_value=1,
-                    value=1,
-                    step=1,
-                    key=f"demo_qty_{idx}"  # Changed to use index to avoid product name issues
-                )
-                quantities.append(str(qty))  # Convert to string immediately
+            for i, prod in enumerate(selected_products):
+                qty = st.number_input(f"Qty for {prod}", min_value=1, value=1, step=1, key=f"demo_qty_{i}")
+                quantities.append(str(qty))
 
         if st.button("Record Demo", key="record_demo_button"):
             if outlet_name and selected_products:
-                # Get current IST time for check-in datetime
-                current_datetime = get_ist_time()
-                
-                # Create check-in datetime (use selected demo date but current time)
-                if check_in_time is None:
-                    check_in_time = current_datetime.time()
-                check_in_datetime = datetime.combine(demo_date, check_in_time)
-                
-                # Create check-out datetime
-                if check_out_time is None:
-                    check_out_time = current_datetime.time()
-                check_out_datetime = datetime.combine(demo_date, check_out_time)
-                
-                # Calculate duration
-                duration = (check_out_datetime - check_in_datetime).total_seconds() / 60
-                
-                # Create demo ID
-                demo_id = f"DEMO-{current_datetime.strftime('%Y%m%d')}-{str(uuid.uuid4())[:8].upper()}"
-                
-                # Get partner employee code
-                partner_employee_code = Person[Person['Employee Name'] == partner_employee]['Employee Code'].values[0]
-                
-                # Prepare demo data with proper data types
+                now = get_ist_time()
+                # fallback to now if times are None
+                if check_in_time  is None: check_in_time  = now.time()
+                if check_out_time is None: check_out_time = now.time()
+                ci = datetime.combine(demo_date, check_in_time)
+                co = datetime.combine(demo_date, check_out_time)
+                duration = (co - ci).total_seconds() / 60.0
+                demo_id  = f"DEMO-{now.strftime('%Y%m%d')}-{uuid.uuid4().hex[:8].upper()}"
+
                 demo_data = {
                     "Demo ID": demo_id,
                     "Employee Name": selected_employee,
-                    "Employee Code": Person[Person['Employee Name'] == selected_employee]['Employee Code'].values[0],
-                    "Designation": Person[Person['Employee Name'] == selected_employee]['Designation'].values[0],
+                    "Employee Code": Person.loc[Person['Employee Name']==selected_employee,'Employee Code'].iat[0],
+                    "Designation": Person.loc[Person['Employee Name']==selected_employee,'Designation'].iat[0],
                     "Partner Employee": partner_employee,
-                    "Partner Employee Code": partner_employee_code,
+                    "Partner Employee Code": Person.loc[Person['Employee Name']==partner_employee,'Employee Code'].iat[0],
                     "Outlet Name": outlet_name,
                     "Outlet Contact": outlet_contact,
                     "Outlet Address": outlet_address,
                     "Outlet State": outlet_state,
                     "Outlet City": outlet_city,
-                    "Demo Date": demo_date.strftime("%d-%m-%Y"),  # Selected date
-                    "Check-in Time": check_in_datetime.strftime("%H:%M:%S"),
-                    "Check-out Time": check_out_datetime.strftime("%H:%M:%S"),
-                    "Check-in Date Time": current_datetime.strftime("%d-%m-%Y %H:%M:%S"),  # Actual timestamp
+                    "Demo Date": demo_date.strftime("%d-%m-%Y"),
+                    "Check-in Time": ci.strftime("%H:%M:%S"),
+                    "Check-out Time": co.strftime("%H:%M:%S"),
+                    "Check-in Date Time": now.strftime("%d-%m-%Y %H:%M:%S"),
                     "Duration (minutes)": round(duration, 2),
                     "Outlet Review": outlet_review,
                     "Remarks": remarks,
                     "Status": "Completed",
-                    "Products": "|".join(selected_products),  # Changed to pipe separator
-                    "Quantities": "|".join(quantities)  # Changed to pipe separator
+                    "Products": "|".join(selected_products),
+                    "Quantities": "|".join(quantities)
                 }
-                
-                # Log to Google Sheets
+
                 try:
-                    existing_data = conn.read(worksheet="Demos", usecols=list(range(len(DEMO_SHEET_COLUMNS))), ttl=5)
-                    existing_data = existing_data.dropna(how="all")
-                    
-                    # Convert to DataFrame with correct column order
-                    demo_df = pd.DataFrame([demo_data], columns=DEMO_SHEET_COLUMNS)
-                    
-                    # Concatenate with existing data
-                    updated_data = pd.concat([existing_data, demo_df], ignore_index=True)
-                    
-                    # Write to Google Sheets
-                    conn.update(worksheet="Demos", data=updated_data)
-                    
+                    existing = conn.read(worksheet="Demos", usecols=list(range(len(DEMO_SHEET_COLUMNS))), ttl=5).dropna(how="all")
+                    df_new   = pd.DataFrame([demo_data], columns=DEMO_SHEET_COLUMNS)
+                    conn.update(worksheet="Demos", data=pd.concat([existing, df_new], ignore_index=True))
                     st.success(f"Demo {demo_id} recorded successfully!")
                     st.balloons()
                 except Exception as e:
-                    st.error(f"Failed to record demo: {str(e)}")
+                    st.error(f"Failed to record demo: {e}")
             else:
-                st.error("Please fill all required fields (Outlet and at least one product).")
-    
+                st.error("Please fill all required fields (Outlet + ≥1 product).")
+    # --- Demo History Tab ---
     with tab2:
         st.subheader("Demo History")
-        
+
         @st.cache_data(ttl=300)
         def load_demo_data():
             try:
-                demo_data = conn.read(worksheet="Demos", usecols=list(range(len(DEMO_SHEET_COLUMNS))), ttl=5)
-                demo_data = demo_data.dropna(how='all')
-                
-                # Convert Demo Date to datetime
-                demo_data['Demo Date'] = pd.to_datetime(demo_data['Demo Date'], dayfirst=True, errors='coerce')
-                
-                # Filter for current employee
-                employee_code = Person[Person['Employee Name'] == selected_employee]['Employee Code'].values[0]
-                filtered_data = demo_data[demo_data['Employee Code'] == employee_code]
-                
-                return filtered_data.sort_values('Demo Date', ascending=False)
+                df = conn.read(worksheet="Demos", usecols=list(range(len(DEMO_SHEET_COLUMNS))), ttl=5)
+                df = df.dropna(how="all")
+                # parse dates & cast duration to float
+                df['Demo Date']         = pd.to_datetime(df['Demo Date'], dayfirst=True, errors='coerce')
+                df['Duration (minutes)']= pd.to_numeric(df['Duration (minutes)'], errors='coerce')
+                code = Person.loc[Person['Employee Name']==selected_employee,'Employee Code'].iat[0]
+                return df[df['Employee Code']==code].sort_values('Demo Date', ascending=False)
             except Exception as e:
                 st.error(f"Error loading demo data: {e}")
                 return pd.DataFrame()
-        
+
         demo_data = load_demo_data()
-        
         if demo_data.empty:
             st.warning("No demo records found for your account")
             return
-            
+
+        # Filters
         with st.expander("🔍 Search Filters", expanded=True):
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                demo_id_search = st.text_input("Demo ID", key="demo_id_search")
-            with col2:
-                demo_date_search = st.date_input("Demo Date", key="demo_date_search")
-            with col3:
-                outlet_name_search = st.text_input("Outlet Name", key="demo_outlet_search")
-            
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                fid = st.text_input("Demo ID", key="demo_id_search")
+            with c2:
+                fdate = st.date_input("Demo Date", key="demo_date_search")
+            with c3:
+                fout = st.text_input("Outlet Name", key="demo_outlet_search")
             if st.button("Apply Filters", key="search_demo_button"):
                 st.rerun()
-        
-        filtered_data = demo_data.copy()
-        
-        # Apply filters
-        if demo_id_search:
-            filtered_data = filtered_data[
-                filtered_data['Demo ID'].str.contains(demo_id_search, case=False, na=False)
-            ]
-        
-        if demo_date_search:
-            date_str = demo_date_search.strftime("%d-%m-%Y")
-            filtered_data = filtered_data[
-                filtered_data['Demo Date'].dt.strftime('%d-%m-%Y') == date_str
-            ]
-        
-        if outlet_name_search:
-            filtered_data = filtered_data[
-                filtered_data['Outlet Name'].str.contains(outlet_name_search, case=False, na=False)
-            ]
-        
-        if filtered_data.empty:
+
+        filtered = demo_data.copy()
+        if fid:  filtered = filtered[filtered['Demo ID'].str.contains(fid, case=False, na=False)]
+        if fdate:
+            ds = fdate.strftime("%d-%m-%Y")
+            filtered = filtered[filtered['Demo Date'].dt.strftime('%d-%m-%Y') == ds]
+        if fout: filtered = filtered[filtered['Outlet Name'].str.contains(fout, case=False, na=False)]
+
+        if filtered.empty:
             st.warning("No matching records found")
             return
-            
-        # Display summary table
-        st.write(f"📄 Showing {len(filtered_data)} of your demos")
-        
-        # Display the summary table with key columns
+
+        st.write(f"📄 Showing {len(filtered)} of your demos")
         summary_cols = [
-            'Demo ID', 'Demo Date', 'Outlet Name', 'Partner Employee',
-            'Check-in Time', 'Check-out Time', 'Duration (minutes)', 'Outlet Review'
+            'Demo ID','Demo Date','Outlet Name','Partner Employee',
+            'Check-in Time','Check-out Time','Duration (minutes)','Outlet Review'
         ]
-        
         st.dataframe(
-            filtered_data[summary_cols],
-            column_config={
-                "Demo Date": st.column_config.DateColumn(format="DD/MM/YYYY"),
-            },
+            filtered[summary_cols],
+            column_config={"Demo Date": st.column_config.DateColumn(format="DD/MM/YYYY")},
             use_container_width=True,
             hide_index=True
         )
-        
-        # Detailed view
-        selected_demo = st.selectbox(
-            "Select demo to view details",
-            filtered_data['Demo ID'],
-            key="demo_selection"
-        )
-        
-        if not filtered_data.empty:
-            demo_details = filtered_data[filtered_data['Demo ID'] == selected_demo].iloc[0]
-            
-            st.subheader(f"Demo {selected_demo} Details")
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("Date", demo_details['Demo Date'].strftime('%d-%m-%Y'))
-                st.metric("Outlet", str(demo_details['Outlet Name']))
-                st.metric("Contact", str(demo_details['Outlet Contact']))
-                st.metric("Partner", str(demo_details['Partner Employee']))
-            with col2:
-                st.metric("Check-in", str(demo_details['Check-in Time']))
-                st.metric("Check-out", str(demo_details['Check-out Time']))
-                st.metric("Duration", f"{demo_details['Duration (minutes)']:.1f} minutes")
-                st.metric("Review", str(demo_details['Outlet Review']))
-            
-            st.subheader("Products Demonstrated")
-            products = demo_details['Products'].split(", ")
-            quantities = demo_details['Quantities'].split(", ")
-            
-            product_df = pd.DataFrame({
-                "Product": products,
-                "Quantity": quantities
-            })
-            
-            st.dataframe(
-                product_df,
-                use_container_width=True,
-                hide_index=True
-            )
-            
-            st.subheader("Remarks")
-            st.write(demo_details['Remarks'])
-            
-            # Add download option
-            csv = filtered_data.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                "Download Demo History",
-                csv,
-                "demo_history.csv",
-                "text/csv",
-                key='download-demo-csv'
-            )
+
+        sel = st.selectbox("Select demo to view details", filtered['Demo ID'], key="demo_selection")
+        details = filtered[filtered['Demo ID']==sel].iloc[0]
+
+        st.subheader(f"Demo {sel} Details")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Date", details['Demo Date'].strftime('%d-%m-%Y'))
+            st.metric("Outlet", details['Outlet Name'])
+            st.metric("Contact", details['Outlet Contact'])
+            st.metric("Partner", details['Partner Employee'])
+        with col2:
+            st.metric("Check-in", details['Check-in Time'])
+            st.metric("Check-out", details['Check-out Time'])
+            st.metric("Duration", f"{details['Duration (minutes)']:.1f} minutes")
+            st.metric("Review", details['Outlet Review'])
+
+        st.subheader("Products Demonstrated")
+        prod_str = str(details.get('Products',''))
+        qty_str  = str(details.get('Quantities',''))
+        prods = prod_str.split("|") if prod_str else []
+        qtys  = qty_str.split("|")  if qty_str  else []
+        # pad lists
+        L = max(len(prods), len(qtys))
+        prods += [""]*(L-len(prods))
+        qtys  += [""]*(L-len(qtys))
+        df_pd = pd.DataFrame({"Product": prods, "Quantity": qtys})
+        st.dataframe(df_pd, use_container_width=True, hide_index=True)
+
+        st.subheader("Remarks")
+        st.write(details['Remarks'])
+
+        csv = filtered.to_csv(index=False).encode('utf-8')
+        st.download_button("Download Demo History", csv, "demo_history.csv", "text/csv", key='download-demo-csv')
+
 
 def support_ticket_page():
     st.title("Support Ticket Management")
@@ -1675,17 +1608,25 @@ def sales_page():
     
     with tab1:
         discount_category = Person[Person['Employee Name'] == selected_employee]['Discount Category'].values[0]
-
+    
         st.subheader("Transaction Details")
-        transaction_type = st.selectbox("Transaction Type", ["Sold", "Return", "Add On", "Damage", "Expired"], key="transaction_type")
-
+        transaction_type = st.selectbox(
+            "Transaction Type",
+            ["Sold", "Return", "Add On", "Damage", "Expired"],
+            key="transaction_type"
+        )
+    
         st.subheader("Product Details")
-        product_names = Products['Product Name'].tolist()
-        selected_products = st.multiselect("Select Products", product_names, key="product_selection")
-
+        product_names     = Products['Product Name'].tolist()
+        selected_products = st.multiselect(
+            "Select Products",
+            product_names,
+            key="product_selection"
+        )
+    
         quantities = []
         product_discounts = []
-
+    
         if selected_products:
             st.markdown("### Product Prices & Discounts")
             price_cols = st.columns(4)
@@ -1697,46 +1638,49 @@ def sales_page():
                 st.markdown("**Discount %**")
             with price_cols[3]:
                 st.markdown("**Quantity**")
-            
-            subtotal = 0
+    
+            subtotal = 0.0
             for product in selected_products:
                 product_data = Products[Products['Product Name'] == product].iloc[0]
-                
-                if discount_category in product_data:
-                    unit_price = float(product_data[discount_category])
-                else:
-                    unit_price = float(product_data['Price'])
-                
+                unit_price = float(product_data.get(discount_category, product_data['Price']))
+    
                 cols = st.columns(4)
                 with cols[0]:
                     st.text(product)
                 with cols[1]:
                     st.text(f"₹{unit_price:.2f}")
+    
+                # Discount % placeholder
                 with cols[2]:
-                    prod_discount = st.number_input(
-                        f"Discount for {product}",
-                        min_value=0.0,
-                        max_value=100.0,
-                        value=0.0,
-                        step=0.1,
+                    disc_str = st.text_input(
+                        "Discount %",
                         key=f"discount_{product}",
+                        placeholder="Discount %",
                         label_visibility="collapsed"
                     )
+                    try:
+                        prod_discount = float(disc_str)
+                    except:
+                        prod_discount = 0.0
                     product_discounts.append(prod_discount)
+    
+                # Quantity placeholder
                 with cols[3]:
-                    qty = st.number_input(
-                        f"Qty for {product}",
-                        min_value=1,
-                        value=1,
-                        step=1,
+                    qty_str = st.text_input(
+                        "Quantity",
                         key=f"qty_{product}",
+                        placeholder="Quantity",
                         label_visibility="collapsed"
                     )
+                    try:
+                        qty = int(qty_str)
+                    except:
+                        qty = 1
                     quantities.append(qty)
-                
-                item_total = unit_price * (1 - prod_discount/100) * qty
-                subtotal += item_total
-            
+    
+                # accumulate subtotal
+                subtotal += unit_price * (1 - prod_discount / 100) * qty
+    
             # Final amount calculation
             st.markdown("---")
             st.markdown("### Final Amount Calculation")
@@ -1744,99 +1688,95 @@ def sales_page():
             tax_amount = subtotal * 0.18
             st.markdown(f"GST (18%): ₹{tax_amount:.2f}")
             st.markdown(f"**Grand Total: ₹{subtotal + tax_amount:.2f}**")
-
+    
         st.subheader("Payment Details")
         payment_status = st.selectbox("Payment Status", ["pending", "paid"], key="payment_status")
-
         amount_paid = 0.0
         if payment_status == "paid":
-            amount_paid = st.number_input("Amount Paid (INR)", min_value=0.0, value=0.0, step=1.0, key="amount_paid")
-
+            amount_paid = st.number_input(
+                "Amount Paid (INR)",
+                min_value=0.0,
+                value=0.0,
+                step=1.0,
+                key="amount_paid"
+            )
+    
         st.subheader("Distributor Details")
         distributor_option = st.radio("Distributor Selection", ["Select from list", "None"], key="distributor_option")
-        
-        distributor_firm_name = ""
-        distributor_id = ""
-        distributor_contact_person = ""
-        distributor_contact_number = ""
-        distributor_email = ""
-        distributor_territory = ""
-        
+        distributor_firm_name = distributor_id = distributor_contact_person = ""
+        distributor_contact_number = distributor_email = distributor_territory = ""
+    
         if distributor_option == "Select from list":
             distributor_names = Distributors['Firm Name'].tolist()
             selected_distributor = st.selectbox("Select Distributor", distributor_names, key="distributor_select")
-            distributor_details = Distributors[Distributors['Firm Name'] == selected_distributor].iloc[0]
-            
-            distributor_firm_name = selected_distributor
-            distributor_id = distributor_details['Distributor ID']
-            distributor_contact_person = distributor_details['Contact Person']
-            distributor_contact_number = distributor_details['Contact Number']
-            distributor_email = distributor_details['Email ID']
-            distributor_territory = distributor_details['Territory']
-            
+            dd = Distributors[Distributors['Firm Name'] == selected_distributor].iloc[0]
+            distributor_firm_name      = selected_distributor
+            distributor_id             = dd['Distributor ID']
+            distributor_contact_person = dd['Contact Person']
+            distributor_contact_number = dd['Contact Number']
+            distributor_email          = dd['Email ID']
+            distributor_territory      = dd['Territory']
+    
             st.text_input("Distributor ID", value=distributor_id, disabled=True, key="distributor_id_display")
             st.text_input("Contact Person", value=distributor_contact_person, disabled=True, key="distributor_contact_person_display")
             st.text_input("Contact Number", value=distributor_contact_number, disabled=True, key="distributor_contact_number_display")
             st.text_input("Email", value=distributor_email, disabled=True, key="distributor_email_display")
             st.text_input("Territory", value=distributor_territory, disabled=True, key="distributor_territory_display")
-
+    
         st.subheader("Outlet Details")
-        outlet_option = st.radio("Outlet Selection", ["Select from list", "Enter manually"], key="outlet_option")
-        
+        outlet_option = st.radio("Outlet Selection", ["Enter manually", "Select from list"], key="outlet_option")
         if outlet_option == "Select from list":
             outlet_names = Outlet['Shop Name'].tolist()
-            selected_outlet = st.selectbox("Select Outlet", outlet_names, key="outlet_select")
-            outlet_details = Outlet[Outlet['Shop Name'] == selected_outlet].iloc[0]
-            
-            customer_name = selected_outlet
-            gst_number = outlet_details['GST']
-            contact_number = outlet_details['Contact']
-            address = outlet_details['Address']
-            state = outlet_details['State']
-            city = outlet_details['City']
-            
-            st.text_input("Outlet Contact", value=contact_number, disabled=True, key="outlet_contact_display")
-            st.text_input("Outlet Address", value=address, disabled=True, key="outlet_address_display")
-            st.text_input("Outlet State", value=state, disabled=True, key="outlet_state_display")
-            st.text_input("Outlet City", value=city, disabled=True, key="outlet_city_display")
+            chosen_outlet = st.selectbox("Select Outlet", outlet_names, key="outlet_select")
+            od = Outlet[Outlet['Shop Name'] == chosen_outlet].iloc[0]
+            customer_name, gst_number = chosen_outlet, od['GST']
+            contact_number, address = od['Contact'], od['Address']
+            state, city = od['State'], od['City']
+    
             st.text_input("GST Number", value=gst_number, disabled=True, key="outlet_gst_display")
+            st.text_input("Contact Number", value=contact_number, disabled=True, key="outlet_contact_display")
+            st.text_input("Address", value=address, disabled=True, key="outlet_address_display")
+            st.text_input("State", value=state, disabled=True, key="outlet_state_display")
+            st.text_input("City", value=city, disabled=True, key="outlet_city_display")
         else:
             customer_name = st.text_input("Outlet Name", key="manual_outlet_name")
-            gst_number = st.text_input("GST Number", key="manual_gst_number")
+            gst_number    = st.text_input("GST Number", key="manual_gst_number")
             contact_number = st.text_input("Contact Number", key="manual_contact_number")
-            address = st.text_area("Address", key="manual_address")
-            state = st.text_input("State", "", key="manual_state")
-            city = st.text_input("City", "", key="manual_city")
-
+            address        = st.text_area("Address", key="manual_address")
+            
+            # State and City Dropdowns
+            unique_states = sorted(citystate['State'].unique())
+            selected_state = st.selectbox("State", unique_states, key="manual_state")
+            
+            # Filter cities based on selected state
+            cities_in_state = sorted(citystate[citystate['State'] == selected_state]['City'].unique())
+            selected_city = st.selectbox("City", cities_in_state, key="manual_city")
+    
         if st.button("Generate Invoice", key="generate_invoice_button"):
             if selected_products and customer_name:
                 invoice_number = generate_invoice_number()
-                employee_selfie_path = None
-                payment_receipt_path = None
-
                 pdf, pdf_path = generate_invoice(
-                    customer_name, gst_number, contact_number, address, state, city,
-                    selected_products, quantities, product_discounts, discount_category, 
-                    selected_employee, payment_status, amount_paid, employee_selfie_path, 
-                    payment_receipt_path, invoice_number, transaction_type,
+                    customer_name, gst_number, contact_number, address, selected_state, selected_city,
+                    selected_products, quantities, product_discounts, discount_category,
+                    selected_employee, payment_status, amount_paid, None, None,
+                    invoice_number, transaction_type,
                     distributor_firm_name, distributor_id, distributor_contact_person,
                     distributor_contact_number, distributor_email, distributor_territory,
-                    sales_remarks
+                    "",  # remarks
                 )
-                
                 with open(pdf_path, "rb") as f:
                     st.download_button(
-                        "Download Invoice", 
-                        f, 
+                        "Download Invoice",
+                        f,
                         file_name=f"{invoice_number}.pdf",
                         mime="application/pdf",
                         key=f"download_{invoice_number}"
                     )
-                
                 st.success(f"Invoice {invoice_number} generated successfully!")
                 st.balloons()
             else:
                 st.error("Please fill all required fields and select products.")
+
     
     with tab2:
         st.subheader("Your Sales History")
@@ -1967,14 +1907,14 @@ def sales_page():
                 # Get current status for the invoice
                 current_status = invoice_details.iloc[0].get('Delivery Status', 'Pending')
                 
-                # Display status selection
+                status_options = ["Pending", "Order Done", "Delivery Done", "Cancelled"]
                 new_status = st.selectbox(
                     "Update Delivery Status",
-                    ["Pending", "Order Done", "Delivery Done"],
-                    index=["Pending", "Order Done", "Delivery Done"].index(current_status) 
-                    if current_status in ["Pending", "Order Done", "Delivery Done"] else 0,
+                    status_options,
+                    index=status_options.index(current_status) if current_status in status_options else 0,
                     key=f"status_{selected_invoice}"
                 )
+
                 
                 # Submit button for the form
                 submitted = st.form_submit_button("Update Status")
@@ -2089,15 +2029,13 @@ def sales_page():
 def visit_page():
     st.title("Visit Management")
     selected_employee = st.session_state.employee_name
-
-    # Empty remarks since we removed the location input
     visit_remarks = ""
 
     tab1, tab2 = st.tabs(["New Visit", "Visit History"])
     
     with tab1:
         st.subheader("Outlet Details")
-        outlet_option = st.radio("Outlet Selection", ["Select from list", "Enter manually"], key="visit_outlet_option")
+        outlet_option = st.radio("Outlet Selection", ["Enter manually", "Select from list"], key="visit_outlet_option")
         
         if outlet_option == "Select from list":
             outlet_names = Outlet['Shop Name'].tolist()
@@ -2110,7 +2048,6 @@ def visit_page():
             outlet_state = outlet_details['State']
             outlet_city = outlet_details['City']
             
-            # Show outlet details like distributor details
             st.text_input("Outlet Contact", value=outlet_contact, disabled=True, key="outlet_contact_display")
             st.text_input("Outlet Address", value=outlet_address, disabled=True, key="outlet_address_display")
             st.text_input("Outlet State", value=outlet_state, disabled=True, key="outlet_state_display")
@@ -2119,8 +2056,14 @@ def visit_page():
             outlet_name = st.text_input("Outlet Name", key="visit_outlet_name")
             outlet_contact = st.text_input("Outlet Contact", key="visit_outlet_contact")
             outlet_address = st.text_area("Outlet Address", key="visit_outlet_address")
-            outlet_state = st.text_input("Outlet State", "", key="visit_outlet_state")
-            outlet_city = st.text_input("Outlet City", "", key="visit_outlet_city")
+            
+            # State and City Dropdowns
+            unique_states = sorted(citystate['State'].unique())
+            selected_state = st.selectbox("State", unique_states, key="visit_outlet_state")
+            
+            # Filter cities based on selected state
+            cities_in_state = sorted(citystate[citystate['State'] == selected_state]['City'].unique())
+            selected_city = st.selectbox("City", cities_in_state, key="visit_outlet_city")
 
         st.subheader("Visit Details")
         visit_purpose = st.selectbox("Visit Purpose", ["Sales", "Demo", "Product Demonstration", "Relationship Building", "Issue Resolution", "Other"], key="visit_purpose")
@@ -2145,12 +2088,11 @@ def visit_page():
                 entry_datetime = datetime.combine(today, entry_time)
                 exit_datetime = datetime.combine(today, exit_time)
                 
-                # No visit selfie upload
                 visit_selfie_path = None
                 
                 visit_id = record_visit(
                     selected_employee, outlet_name, outlet_contact, outlet_address,
-                    outlet_state, outlet_city, visit_purpose, visit_notes, 
+                    selected_state, selected_city, visit_purpose, visit_notes, 
                     visit_selfie_path, entry_datetime, exit_datetime,
                     visit_remarks
                 )
@@ -2271,4 +2213,3 @@ def attendance_page():
 
 if __name__ == "__main__":
     main()
-
