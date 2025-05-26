@@ -17,6 +17,34 @@ import pytz
 import time
 import pandas as pd
 
+from streamlit_js_eval import streamlit_js_eval
+
+def set_login_cookie(employee_name):
+    max_age = 7 * 24 * 60 * 60  
+    js = f"""
+      document.cookie = `login={employee_name}; path=/; max-age={max_age}`;
+    """
+    streamlit_js_eval(js_expressions=js, key="set_login_cookie")
+
+def read_login_cookie():
+    result = streamlit_js_eval(
+        js_expressions="""
+        (() => {
+          const cookies = document.cookie.split(";").reduce((acc, c) => {
+            const [k, v] = c.trim().split("=");
+            acc[k] = v;
+            return acc;
+          }, {});
+          return cookies.login || null;
+        })()
+        """,
+        key="read_login"
+    ) or None
+    return result
+
+def clear_login_cookie():
+    js = "document.cookie = 'login=; path=/; max-age=0';"
+    streamlit_js_eval(js_expressions=js, key="clear_login")
 
 
 def log_location_history(conn, employee_name, lat, lng):
@@ -1580,6 +1608,7 @@ def add_back_button():
         st.rerun()
 
 def main():
+    # Initialize session state
     if 'authenticated' not in st.session_state:
         st.session_state.authenticated = False
     if 'selected_mode' not in st.session_state:
@@ -1587,122 +1616,88 @@ def main():
     if 'employee_name' not in st.session_state:
         st.session_state.employee_name = None
 
+    # Attempt auto-login via cookie
     if not st.session_state.authenticated:
-        # Display the centered logo and heading
+        saved_user = read_login_cookie()
+        if saved_user:
+            st.session_state.authenticated = True
+            st.session_state.employee_name = saved_user
+
+    # Authentication flow
+    if not st.session_state.authenticated:
         display_login_header()
-
         employee_names = Person['Employee Name'].tolist()
-
-        # Create centered form
-        form_col1, form_col2, form_col3 = st.columns([1, 2, 1])
-
-        with form_col2:
-            with st.container():
-                employee_name = st.selectbox(
-                    "Select Your Name", 
-                    employee_names, 
-                    key="employee_select"
-                )
-                passkey = st.text_input(
-                    "Enter Your Employee Code", 
-                    type="password", 
-                    key="passkey_input"
-                )
-
-                login_button = st.button(
-                    "Log in", 
-                    key="login_button",
-                    use_container_width=True
-                )
-
-                if login_button:
-                    if authenticate_employee(employee_name, passkey):
-                        # Immediately fetch and log location after login
-                        result = streamlit_js_eval(
-                            js_expressions="""
-                                new Promise((resolve) => {
-                                    if (navigator.geolocation) {
-                                        navigator.geolocation.getCurrentPosition(
-                                            pos => resolve({latitude: pos.coords.latitude, longitude: pos.coords.longitude}),
-                                            err => resolve({latitude: null, longitude: null})
-                                        );
-                                    } else {
-                                        resolve({latitude: null, longitude: null});
-                                    }
-                                });
-                            """,
-                            key=f"geo_login_{employee_name}_{int(time.time())}"
-                        ) or {}
-
-                        lat = result.get("latitude")
-                        lng = result.get("longitude")
-                        if lat and lng:
-                            log_location_history(conn, employee_name, lat, lng)
-                            gmaps_link = f"https://maps.google.com/?q={lat},{lng}"
-                            st.success(f"Login location logged: [View on Google Maps]({gmaps_link})")
-                            # Brief pause for user to see the message
-                            time.sleep(1.5)
-                        st.session_state.authenticated = True
-                        st.session_state.employee_name = employee_name
-                        st.rerun()
-                    else:
-                        st.error("Invalid Password. Please try again.")
-    else:
-        # Show option boxes after login
-        st.title("Select Mode")
-        col1, col2, col3, col4, col5, col6, col7 = st.columns(7)
-
-        with col1:
-            if st.button("Sales", use_container_width=True, key="sales_mode"):
-                st.session_state.selected_mode = "Sales"
-                st.rerun()
-
+        col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            if st.button("Visit", use_container_width=True, key="visit_mode"):
-                st.session_state.selected_mode = "Visit"
+            name = st.selectbox("Select Your Name", employee_names, key="employee_select")
+            passkey = st.text_input(
+                "Enter Your Employee Code", type="password", key="passkey_input"
+            )
+            if st.button("Log in", key="login_button"):
+                if authenticate_employee(name, passkey):
+                    # Persist login in cookie
+                    set_login_cookie(name)
+                    # Log initial location
+                    result = streamlit_js_eval(
+                        js_expressions="""
+                            new Promise((resolve) => {
+                                if (navigator.geolocation) {
+                                    navigator.geolocation.getCurrentPosition(
+                                        pos => resolve({latitude: pos.coords.latitude, longitude: pos.coords.longitude}),
+                                        err => resolve({latitude: null, longitude: null})
+                                    );
+                                } else {
+                                    resolve({latitude: null, longitude: null});
+                                }
+                            });
+                        """, key=f"geo_login_{name}_{int(time.time())}"
+                    ) or {}
+                    lat = result.get("latitude")
+                    lng = result.get("longitude")
+                    if lat and lng:
+                        log_location_history(conn, name, lat, lng)
+                        gmaps_link = f"https://maps.google.com/?q={lat},{lng}"
+                        st.success(f"Login location logged: [View on Google Maps]({gmaps_link})")
+                        time.sleep(1.5)
+                    st.session_state.authenticated = True
+                    st.session_state.employee_name = name
+                    st.rerun()
+                else:
+                    st.error("Invalid Password. Please try again.")
+    else:
+        # Post-login UI
+        st.title("Select Mode")
+        cols = st.columns(7)
+        modes = ["Sales", "Visit", "Attendance", "Resources", "Support Ticket", "Travel/Hotel", "Demo"]
+        for idx, mode in enumerate(modes):
+            if cols[idx].button(mode, use_container_width=True, key=f"mode_{mode}"):
+                st.session_state.selected_mode = mode
                 st.rerun()
 
-        with col3:
-            if st.button("Attendance", use_container_width=True, key="attendance_mode"):
-                st.session_state.selected_mode = "Attendance"
-                st.rerun()
+        # Logout button
+        if st.button("← Logout", key="logout_button"):
+            st.session_state.authenticated = False
+            st.session_state.employee_name = None
+            clear_login_cookie()
+            st.rerun()
 
-        with col4:
-            if st.button("Resources", use_container_width=True, key="resources_mode"):
-                st.session_state.selected_mode = "Resources"
-                st.rerun()
-
-        with col5:
-            if st.button("Support Ticket", use_container_width=True, key="ticket_mode"):
-                st.session_state.selected_mode = "Support Ticket"
-                st.rerun()
-
-        with col6:
-            if st.button("Travel/Hotel", use_container_width=True, key="travel_mode"):
-                st.session_state.selected_mode = "Travel/Hotel"
-                st.rerun()
-
-        with col7:
-            if st.button("Demo", use_container_width=True, key="demo_mode"):
-                st.session_state.selected_mode = "Demo"
-                st.rerun()
-
+        # Navigate to selected page
         if st.session_state.selected_mode:
             add_back_button()
-
-            if st.session_state.selected_mode == "Sales":
+            mode = st.session_state.selected_mode
+            if mode == "Sales":
                 sales_page()
-            elif st.session_state.selected_mode == "Visit":
+            elif mode == "Visit":
                 visit_page()
-            elif st.session_state.selected_mode == "Attendance":
+            elif mode == "Attendance":
                 attendance_page()
-            elif st.session_state.selected_mode == "Resources":
+            elif mode == "Resources":
                 resources_page()
-            elif st.session_state.selected_mode == "Support Ticket":
+            elif mode == "Support Ticket":
                 support_ticket_page()
-            elif st.session_state.selected_mode == "Travel/Hotel":
+            elif mode == "Travel/Hotel":
                 travel_hotel_page()
-            elif st.session_state.selected_mode == "Demo":
+            elif mode == "Demo":
                 demo_page()
 
 
