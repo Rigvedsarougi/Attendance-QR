@@ -7,6 +7,7 @@ from PIL import Image
 from datetime import datetime, time, timedelta
 import pytz
 import time
+from streamlit_js_eval import streamlit_js_eval
 
 # Hide Streamlit style elements
 hide_streamlit_style = """
@@ -48,16 +49,14 @@ def get_ist_time():
 
 def display_login_header():
     col1, col2, col3 = st.columns([1, 3, 1])
-    
     with col2:
         try:
             logo = Image.open("logo.png")
             st.image(logo, use_container_width=True)
         except FileNotFoundError:
-            st.warning("Logo image not found. Please ensure 'logo.png' exists in the same directory.")
+            st.warning("Logo image not found. Please ensure 'logo.png' exists.")
         except Exception as e:
             st.warning(f"Could not load logo: {str(e)}")
-        
         st.markdown("""
         <div style='text-align: center; margin-bottom: 30px;'>
             <h1 style='margin-bottom: 0;'>Employee Portal</h1>
@@ -67,7 +66,7 @@ def display_login_header():
 
 def authenticate_employee(employee_name, passkey):
     try:
-        employee_code = Person[Person['Employee Name'] == employee_name]['Employee Code'].values[0]
+        employee_code = Person.loc[Person['Employee Name'] == employee_name, 'Employee Code'].values[0]
         return str(passkey) == str(employee_code)
     except:
         return False
@@ -79,12 +78,9 @@ def log_attendance_to_gsheet(conn, attendance_data):
     try:
         existing_data = conn.read(worksheet="Attendance", usecols=list(range(len(ATTENDANCE_SHEET_COLUMNS))), ttl=5)
         existing_data = existing_data.dropna(how="all")
-        
         attendance_data = attendance_data.reindex(columns=ATTENDANCE_SHEET_COLUMNS)
-        
         updated_data = pd.concat([existing_data, attendance_data], ignore_index=True)
         updated_data = updated_data.drop_duplicates(subset=["Attendance ID"], keep="last")
-        
         conn.update(worksheet="Attendance", data=updated_data)
         return True, None
     except Exception as e:
@@ -94,27 +90,21 @@ def check_todays_attendance(employee_name):
     try:
         existing_data = conn.read(worksheet="Attendance", usecols=list(range(len(ATTENDANCE_SHEET_COLUMNS))), ttl=5)
         existing_data = existing_data.dropna(how="all")
-        
         if existing_data.empty:
             return None, None, None
-        
         current_date = get_ist_time().strftime("%d-%m-%Y")
-        employee_code = Person[Person['Employee Name'] == employee_name]['Employee Code'].values[0]
-        
+        employee_code = Person.loc[Person['Employee Name'] == employee_name, 'Employee Code'].values[0]
         todays_record = existing_data[
-            (existing_data['Employee Code'] == employee_code) & 
+            (existing_data['Employee Code'] == employee_code) &
             (existing_data['Date'] == current_date)
         ]
-        
         if todays_record.empty:
             return None, None, None
-        
-        check_in = todays_record.iloc[0].get('Check-in Time', None)
-        check_out = todays_record.iloc[0].get('Check-out Time', None)
-        status = todays_record.iloc[0].get('Status', None)
-        
-        return check_in, check_out, status
-        
+        return (
+            todays_record.iloc[0].get('Check-in Time', None),
+            todays_record.iloc[0].get('Check-out Time', None),
+            todays_record.iloc[0].get('Total Hours', None)
+        )
     except Exception as e:
         st.error(f"Error checking attendance: {str(e)}")
         return None, None, None
@@ -138,10 +128,7 @@ def get_location():
             key="geo"
         ) or {}
         st.session_state.location = result
-    
-    lat = result.get("latitude")
-    lng = result.get("longitude")
-    
+    lat, lng = result.get("latitude"), result.get("longitude")
     if lat and lng:
         return f"https://maps.google.com/?q={lat},{lng}"
     return ""
@@ -149,209 +136,143 @@ def get_location():
 def resources_page():
     st.title("Company Resources")
     st.markdown("Download important company documents and product catalogs.")
-    
-    # Define the resources
     resources = [
-        {
-            "name": "Product Catalogue",
-            "description": "Complete list of all available products with specifications",
-            "file_path": "Biolume Salon Prices Catalogue.pdf"
-        },
-        {
-            "name": "Employee Handbook",
-            "description": "Company policies, procedures, and guidelines for employees",
-            "file_path": "Biolume Employee Handbook.pdf"
-        },
-        {
-            "name": "Facial Treatment Catalogue",
-            "description": "Complete list of all Facial products with specifications",
-            "file_path": "Biolume's Facial Treatment Catalogue.pdf"
-        }
+        {"name": "Product Catalogue", "description": "List of all products with specs", "file_path": "Biolume Salon Prices Catalogue.pdf"},
+        {"name": "Employee Handbook", "description": "Company policies and guidelines", "file_path": "Biolume Employee Handbook.pdf"},
+        {"name": "Facial Treatment Catalogue", "description": "All facial products specs", "file_path": "Biolume's Facial Treatment Catalogue.pdf"}
     ]
-    
-    # Display each resource in a card-like format
-    for resource in resources:
-        with st.container():
-            st.subheader(resource["name"])
-            st.markdown(resource["description"])
-            
-            # Check if file exists
-            if os.path.exists(resource["file_path"]):
-                with open(resource["file_path"], "rb") as file:
-                    btn = st.download_button(
-                        label=f"Download {resource['name']}",
-                        data=file,
-                        file_name=resource["file_path"],
-                        mime="application/pdf",
-                        key=f"download_{resource['name']}"
-                    )
-            else:
-                st.error(f"File not found: {resource['file_path']}")
-            
-            st.markdown("---")  # Divider between resources
+    for res in resources:
+        st.subheader(res["name"])
+        st.markdown(res["description"])
+        if os.path.exists(res["file_path"]):
+            with open(res["file_path"], "rb") as file:
+                st.download_button(f"Download {res['name']}", data=file, file_name=res["file_path"], mime="application/pdf")
+        else:
+            st.error(f"File not found: {res['file_path']}")
+        st.markdown("---")
 
 def attendance_page():
     st.title("Attendance Management")
     selected_employee = st.session_state.employee_name
-    
-    # Check today's attendance status
-    check_in, check_out, status = check_todays_attendance(selected_employee)
-    
+    check_in, check_out, total_hours = check_todays_attendance(selected_employee)
     tab1, tab2 = st.tabs(["Check-in", "Check-out"])
-    
+
     with tab1:
         st.subheader("Daily Check-in")
-        
         if check_in:
-            st.success(f"You have already checked in today at {check_in}")
-            st.write(f"Status: {status}")
+            st.success(f"Checked in at {check_in}")
+            st.write(f"Total hours so far: {total_hours or 'N/A'}")
         else:
-            st.subheader("Attendance Status")
             status = st.radio("Select Status", ["Present", "Half Day", "Leave"], index=0, key="attendance_status")
-            
             if status in ["Present", "Half Day"]:
                 location_link = get_location()
-                
                 if location_link:
-                    st.success(f"Location captured: [View on Map]({location_link})")
+                    st.success(f"Location captured: [Map]({location_link})")
                 else:
-                    st.warning("Could not capture location. Please enable location services.")
-                
+                    st.warning("Enable location services.")
                 if st.button("Check-in", key="check_in_button"):
-                    if not location_link and status != "Leave":
-                        st.error("Location is required for check-in")
+                    if not location_link:
+                        st.error("Location required for check-in.")
                     else:
-                        with st.spinner("Recording check-in..."):
-                            attendance_id = generate_attendance_id()
-                            current_date = get_ist_time().strftime("%d-%m-%Y")
-                            current_time = get_ist_time().strftime("%H:%M:%S")
-                            current_datetime = get_ist_time().strftime("%d-%m-%Y %H:%M:%S")
-                            
-                            attendance_data = {
-                                "Attendance ID": attendance_id,
-                                "Employee Name": selected_employee,
-                                "Employee Code": Person[Person['Employee Name'] == selected_employee]['Employee Code'].values[0],
-                                "Designation": Person[Person['Employee Name'] == selected_employee]['Designation'].values[0],
-                                "Date": current_date,
-                                "Check-in Time": current_time,
-                                "Check-out Time": "",
-                                "Status": status,
-                                "Location Link": location_link,
-                                "Leave Reason": "",
-                                "Total Hours": ""
-                            }
-                            
-                            success, error = log_attendance_to_gsheet(conn, pd.DataFrame([attendance_data]))
-                            
-                            if success:
-                                st.success(f"Check-in recorded successfully at {current_time}")
-                                st.balloons()
-                                st.rerun()
-                            else:
-                                st.error(f"Failed to record check-in: {error}")
+                        attendance_data = {
+                            "Attendance ID": generate_attendance_id(),
+                            "Employee Name": selected_employee,
+                            "Employee Code": Person.loc[Person['Employee Name'] == selected_employee, 'Employee Code'].values[0],
+                            "Designation": Person.loc[Person['Employee Name'] == selected_employee, 'Designation'].values[0],
+                            "Date": get_ist_time().strftime("%d-%m-%Y"),
+                            "Check-in Time": get_ist_time().strftime("%H:%M:%S"),
+                            "Check-out Time": "",
+                            "Status": status,
+                            "Location Link": location_link,
+                            "Leave Reason": "",
+                            "Total Hours": ""
+                        }
+                        success, error = log_attendance_to_gsheet(conn, pd.DataFrame([attendance_data]))
+                        if success:
+                            st.success("Check-in recorded!")
+                            st.balloons()
+                            st.rerun()
+                        else:
+                            st.error(f"Error: {error}")
             else:
                 st.subheader("Leave Details")
-                leave_types = ["Sick Leave", "Personal Leave", "Vacation", "Other"]
-                leave_type = st.selectbox("Leave Type", leave_types, key="leave_type")
-                leave_reason = st.text_area("Reason for Leave",
-                                           placeholder="Please provide details about your leave",
-                                           key="leave_reason")
-                
-                if st.button("Submit Leave Request", key="submit_leave_button"):
-                    if not leave_reason:
-                        st.error("Please provide a reason for your leave")
+                lt = st.selectbox("Leave Type", ["Sick", "Personal", "Vacation", "Other"], key="leave_type")
+                lr = st.text_area("Reason", key="leave_reason")
+                if st.button("Submit Leave", key="submit_leave_button"):
+                    if not lr:
+                        st.error("Provide a reason.")
                     else:
-                        full_reason = f"{leave_type}: {leave_reason}"
-                        with st.spinner("Submitting leave request..."):
-                            attendance_id = generate_attendance_id()
-                            current_date = get_ist_time().strftime("%d-%m-%Y")
-                            current_time = get_ist_time().strftime("%H:%M:%S")
-                            
-                            attendance_data = {
-                                "Attendance ID": attendance_id,
-                                "Employee Name": selected_employee,
-                                "Employee Code": Person[Person['Employee Name'] == selected_employee]['Employee Code'].values[0],
-                                "Designation": Person[Person['Employee Name'] == selected_employee]['Designation'].values[0],
-                                "Date": current_date,
-                                "Check-in Time": current_time,
-                                "Check-out Time": "",
-                                "Status": "Leave",
-                                "Location Link": "",
-                                "Leave Reason": full_reason,
-                                "Total Hours": ""
-                            }
-                            
-                            success, error = log_attendance_to_gsheet(conn, pd.DataFrame([attendance_data]))
-                            
-                            if success:
-                                st.success("Leave request submitted successfully!")
-                                st.balloons()
-                                st.rerun()
-                            else:
-                                st.error(f"Failed to submit leave request: {error}")
-    
+                        attendance_data = {
+                            "Attendance ID": generate_attendance_id(),
+                            "Employee Name": selected_employee,
+                            "Employee Code": Person.loc[Person['Employee Name'] == selected_employee, 'Employee Code'].values[0],
+                            "Designation": Person.loc[Person['Employee Name'] == selected_employee, 'Designation'].values[0],
+                            "Date": get_ist_time().strftime("%d-%m-%Y"),
+                            "Check-in Time": get_ist_time().strftime("%H:%M:%S"),
+                            "Check-out Time": "",
+                            "Status": "Leave",
+                            "Location Link": "",
+                            "Leave Reason": f"{lt}: {lr}",
+                            "Total Hours": ""
+                        }
+                        success, error = log_attendance_to_gsheet(conn, pd.DataFrame([attendance_data]))
+                        if success:
+                            st.success("Leave submitted!")
+                            st.balloons()
+                            st.rerun()
+                        else:
+                            st.error(f"Error: {error}")
+
     with tab2:
         st.subheader("Daily Check-out")
-        
         if not check_in:
-            st.warning("You need to check-in first before checking out")
+            st.warning("Check in first.")
         elif check_out:
-            st.success(f"You have already checked out today at {check_out}")
-            
-            # Calculate total hours if available
-            total_hours = check_todays_attendance(selected_employee)[2]
-            if total_hours:
-                st.write(f"Total hours: {total_hours}")
+            st.success(f"Checked out at {check_out}")
+            st.write(f"Total hours: {total_hours or 'N/A'}")
         else:
             location_link = get_location()
-            
             if location_link:
-                st.success(f"Location captured: [View on Map]({location_link})")
+                st.success(f"Location captured: [Map]({location_link})")
             else:
-                st.warning("Could not capture location. Please enable location services.")
-            
+                st.warning("Enable location services.")
             if st.button("Check-out", key="check_out_button"):
                 if not location_link:
-                    st.error("Location is required for check-out")
+                    st.error("Location required for check-out.")
                 else:
                     with st.spinner("Recording check-out..."):
                         try:
-                            # Get existing attendance data
-                            existing_data = conn.read(worksheet="Attendance", ttl=5)
-                            existing_data = existing_data.dropna(how="all")
-                            
+                            existing_data = conn.read(worksheet="Attendance", ttl=5).dropna(how="all")
                             current_date = get_ist_time().strftime("%d-%m-%Y")
-                            employee_code = Person[Person['Employee Name'] == selected_employee]['Employee Code'].values[0]
-                            
-                            # Find today's record
+                            employee_code = Person.loc[Person['Employee Name'] == selected_employee, 'Employee Code'].values[0]
+
+                            # <<< FIXED: close parentheses here >>>
                             mask = (
-                                (existing_data['Employee Code'] == employee_code) & 
+                                (existing_data['Employee Code'] == employee_code) &
                                 (existing_data['Date'] == current_date)
-                            
-                            if not existing_data[mask].empty:
-                                # Update the record
-                                current_time = get_ist_time().strftime("%H:%M:%S")
-                                existing_data.loc[mask, 'Check-out Time'] = current_time
+                            )
+                            if not existing_data.loc[mask].empty:
+                                now_str = get_ist_time().strftime("%H:%M:%S")
+                                existing_data.loc[mask, 'Check-out Time'] = now_str
                                 existing_data.loc[mask, 'Location Link'] = location_link
-                                
+
                                 # Calculate total hours
-                                check_in_time = existing_data.loc[mask, 'Check-in Time'].iloc[0]
+                                ci = existing_data.loc[mask, 'Check-in Time'].iloc[0]
                                 try:
                                     fmt = "%H:%M:%S"
-                                    check_in_dt = datetime.strptime(check_in_time, fmt)
-                                    check_out_dt = datetime.strptime(current_time, fmt)
-                                    total_hours = (check_out_dt - check_in_dt).total_seconds() / 3600
-                                    existing_data.loc[mask, 'Total Hours'] = f"{total_hours:.2f} hours"
+                                    ci_dt = datetime.strptime(ci, fmt)
+                                    co_dt = datetime.strptime(now_str, fmt)
+                                    hours = (co_dt - ci_dt).total_seconds() / 3600
+                                    existing_data.loc[mask, 'Total Hours'] = f"{hours:.2f} hours"
                                 except:
                                     existing_data.loc[mask, 'Total Hours'] = "N/A"
-                                
-                                # Update the sheet
+
                                 conn.update(worksheet="Attendance", data=existing_data)
-                                st.success(f"Check-out recorded successfully at {current_time}")
+                                st.success(f"Check-out recorded at {now_str}")
                                 st.balloons()
                                 st.rerun()
                             else:
-                                st.error("No check-in record found for today")
+                                st.error("No check-in record for today.")
                         except Exception as e:
                             st.error(f"Failed to record check-out: {str(e)}")
 
@@ -366,85 +287,48 @@ def add_back_button():
     }
     </style>
     """, unsafe_allow_html=True)
-    
     if st.button("← Logout", key="back_button"):
-        st.session_state.authenticated = False
-        st.session_state.selected_mode = None
-        st.session_state.employee_name = None
-        st.session_state.location = None
+        for key in ["authenticated", "selected_mode", "employee_name", "location"]:
+            st.session_state.pop(key, None)
         st.rerun()
 
 def main():
-    if 'authenticated' not in st.session_state:
-        st.session_state.authenticated = False
-    if 'selected_mode' not in st.session_state:
-        st.session_state.selected_mode = None
-    if 'employee_name' not in st.session_state:
-        st.session_state.employee_name = None
-    if 'location' not in st.session_state:
-        st.session_state.location = None
+    # Initialize session state
+    for var in ("authenticated", "selected_mode", "employee_name", "location"):
+        if var not in st.session_state:
+            st.session_state[var] = False if var == "authenticated" else None
 
     if not st.session_state.authenticated:
-        # Display the centered logo and heading
         display_login_header()
-
-        employee_names = Person['Employee Name'].tolist()
-
-        # Create centered form
-        form_col1, form_col2, form_col3 = st.columns([1, 2, 1])
-
-        with form_col2:
-            with st.container():
-                employee_name = st.selectbox(
-                    "Select Your Name", 
-                    employee_names, 
-                    key="employee_select"
-                )
-                passkey = st.text_input(
-                    "Enter Your Employee Code", 
-                    type="password", 
-                    key="passkey_input"
-                )
-
-                login_button = st.button(
-                    "Log in", 
-                    key="login_button",
-                    use_container_width=True
-                )
-
-                if login_button:
-                    if authenticate_employee(employee_name, passkey):
-                        st.session_state.authenticated = True
-                        st.session_state.employee_name = employee_name
-                        
-                        # Get location immediately after login
-                        location_link = get_location()
-                        if location_link:
-                            st.success("Location captured for attendance purposes")
-                        st.rerun()
-                    else:
-                        st.error("Invalid Password. Please try again.")
+        names = Person['Employee Name'].tolist()
+        emp_col1, emp_col2, emp_col3 = st.columns([1,2,1])
+        with emp_col2:
+            name = st.selectbox("Select Your Name", names, key="employee_select")
+            key_in = st.text_input("Enter Your Employee Code", type="password", key="passkey_input")
+            if st.button("Log in", key="login_button"):
+                if authenticate_employee(name, key_in):
+                    st.session_state.authenticated = True
+                    st.session_state.employee_name = name
+                    if get_location():
+                        st.success("Location captured")
+                    st.rerun()
+                else:
+                    st.error("Invalid code.")
     else:
-        # Show option boxes after login
         st.title("Employee Portal")
         col1, col2 = st.columns(2)
-
-        with col1:
-            if st.button("Attendance", use_container_width=True, key="attendance_mode"):
-                st.session_state.selected_mode = "Attendance"
-                st.rerun()
-
-        with col2:
-            if st.button("Resources", use_container_width=True, key="resources_mode"):
-                st.session_state.selected_mode = "Resources"
-                st.rerun()
+        if col1.button("Attendance", use_container_width=True):
+            st.session_state.selected_mode = "Attendance"
+            st.rerun()
+        if col2.button("Resources", use_container_width=True):
+            st.session_state.selected_mode = "Resources"
+            st.rerun()
 
         if st.session_state.selected_mode:
             add_back_button()
-
             if st.session_state.selected_mode == "Attendance":
                 attendance_page()
-            elif st.session_state.selected_mode == "Resources":
+            else:
                 resources_page()
 
 if __name__ == "__main__":
