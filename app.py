@@ -309,7 +309,10 @@ ATTENDANCE_SHEET_COLUMNS = [
     "Location Link",
     "Leave Reason",
     "Check-in Time",
-    "Check-in Date Time"
+    "Check-in Date Time",
+    "Check-out Time",
+    "Check-out Date Time",
+    "Working Hours"
 ]
 
 # Add these constants at the top of app.py with other constants
@@ -1569,7 +1572,6 @@ def resources_page():
         }
     ]
     
-    # Display each resource in a card-like format
     for resource in resources:
         with st.container():
             st.subheader(resource["name"])
@@ -1588,7 +1590,7 @@ def resources_page():
             else:
                 st.error(f"File not found: {resource['file_path']}")
             
-            st.markdown("---")  # Divider between resources
+            st.markdown("---")
 
 def add_back_button():
     st.markdown("""
@@ -1858,7 +1860,7 @@ def sales_page():
                     invoice_number, transaction_type,
                     distributor_firm_name, distributor_id, distributor_contact_person,
                     distributor_contact_number, distributor_email, distributor_territory,
-                    "",  # remarks
+                    "",
                 )
                 with open(pdf_path, "rb") as f:
                     st.download_button(
@@ -1883,29 +1885,23 @@ def sales_page():
                 sales_data = conn.read(worksheet="Sales", ttl=5)
                 sales_data = sales_data.dropna(how='all')
                 
-                # Convert columns to proper types
                 sales_data = sales_data.copy()
                 sales_data['Outlet Name'] = sales_data['Outlet Name'].astype(str)
                 sales_data['Invoice Number'] = sales_data['Invoice Number'].astype(str)
                 
-                # Convert Invoice Date properly
                 try:
                     sales_data['Invoice Date'] = pd.to_datetime(sales_data['Invoice Date'], dayfirst=True, errors='coerce')
                 except:
-                    # Fallback if date parsing fails
                     sales_data['Invoice Date'] = pd.to_datetime(sales_data['Invoice Date'], errors='coerce')
                 
-                # Convert numeric columns properly
                 numeric_cols = ['Grand Total', 'Unit Price', 'Total Price', 'Product Discount (%)', 'Quantity']
                 for col in numeric_cols:
                     if col in sales_data.columns:
                         sales_data[col] = pd.to_numeric(sales_data[col], errors='coerce')
                 
-                # Filter for current employee
                 employee_code = Person[Person['Employee Name'] == st.session_state.employee_name]['Employee Code'].values[0]
                 filtered_data = sales_data[sales_data['Employee Code'] == employee_code]
                 
-                # Ensure we have valid dates
                 filtered_data = filtered_data[filtered_data['Invoice Date'].notna()]
                 
                 return filtered_data
@@ -1933,7 +1929,6 @@ def sales_page():
         
         filtered_data = sales_data.copy()
         
-        # Apply filters
         if invoice_number_search:
             filtered_data = filtered_data[
                 filtered_data['Invoice Number'].str.contains(invoice_number_search, case=False, na=False)
@@ -1954,7 +1949,6 @@ def sales_page():
             st.warning("No matching records found")
             return
             
-        # Calculate correct grand total by invoice
         invoice_summary = filtered_data.groupby('Invoice Number').agg({
             'Invoice Date': 'first',
             'Outlet Name': 'first',
@@ -1963,12 +1957,10 @@ def sales_page():
             'Delivery Status': 'first'
         }).reset_index()
         
-        # Sort by date descending
         invoice_summary = invoice_summary.sort_values('Invoice Date', ascending=False)
         
         st.write(f"📄 Showing {len(invoice_summary)} of your invoices")
         
-        # Display the summary table
         st.dataframe(
             invoice_summary,
             column_config={
@@ -1991,16 +1983,12 @@ def sales_page():
             key="invoice_selection"
         )
         
-        # Delivery Status Section
         st.subheader("Delivery Status Management")
         
-        # Get all products for the selected invoice
         invoice_details = filtered_data[filtered_data['Invoice Number'] == selected_invoice]
         
         if not invoice_details.empty:
-            # Create a form for delivery status updates
             with st.form(key='delivery_status_form'):
-                # Get current status for the invoice
                 current_status = invoice_details.iloc[0].get('Delivery Status', 'Pending')
                 
                 status_options = ["Pending", "Order Done", "Delivery Done", "Cancelled"]
@@ -2011,22 +1999,17 @@ def sales_page():
                     key=f"status_{selected_invoice}"
                 )
 
-                
-                # Submit button for the form
                 submitted = st.form_submit_button("Update Status")
                 
                 if submitted:
                     with st.spinner("Updating delivery status..."):
                         try:
-                            # Get all sales data
                             all_sales_data = conn.read(worksheet="Sales", ttl=5)
                             all_sales_data = all_sales_data.dropna(how='all')
                             
-                            # Update the status for all rows with this invoice number
                             mask = all_sales_data['Invoice Number'] == selected_invoice
                             all_sales_data.loc[mask, 'Delivery Status'] = new_status
                             
-                            # Write back the updated data
                             conn.update(worksheet="Sales", data=all_sales_data)
                             
                             st.success(f"Delivery status updated to '{new_status}' for invoice {selected_invoice}!")
@@ -2034,7 +2017,6 @@ def sales_page():
                         except Exception as e:
                             st.error(f"Error updating delivery status: {e}")
         
-        # Display invoice details
         if not invoice_details.empty:
             invoice_data = invoice_details.iloc[0]
             original_invoice_date = invoice_data['Invoice Date'].strftime('%d-%m-%Y')
@@ -2127,7 +2109,6 @@ def visit_page():
     st.title("Visit Management")
     selected_employee = st.session_state.employee_name
 
-    # Empty remarks since we removed the location input
     visit_remarks = ""
 
     tab1, tab2 = st.tabs(["New Visit", "Visit History"])
@@ -2147,7 +2128,6 @@ def visit_page():
             outlet_state = outlet_details['State']
             outlet_city = outlet_details['City']
             
-            # Show outlet details like distributor details
             st.text_input("Outlet Contact", value=outlet_contact, disabled=True, key="outlet_contact_display")
             st.text_input("Outlet Address", value=outlet_address, disabled=True, key="outlet_address_display")
             st.text_input("Outlet State", value=outlet_state, disabled=True, key="outlet_state_display")
@@ -2223,14 +2203,12 @@ def visit_page():
                     filtered_data = filtered_data[filtered_data['Outlet Name'].str.contains(outlet_name_search, case=False)]
                 
                 if not filtered_data.empty:
-                    # Display only the most relevant columns
                     display_columns = [
                         'Visit ID', 'Visit Date', 'Outlet Name', 'Visit Purpose', 'Visit Notes',
                         'Entry Time', 'Exit Time', 'Visit Duration (minutes)', 'Remarks'
                     ]
                     st.dataframe(filtered_data[display_columns])
                     
-                    # Add download option
                     csv = filtered_data.to_csv(index=False).encode('utf-8')
                     st.download_button(
                         "Download as CSV",
