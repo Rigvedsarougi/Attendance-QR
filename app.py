@@ -1760,16 +1760,18 @@ def main():
             if st.button("Attendance", use_container_width=True, key="attendance_mode"):
                 st.session_state.selected_mode = "Attendance"
                 st.rerun()
-
-        with col2:
+                
+        with col2:  # Add this after the existing columns
+            if st.button("Checkout", use_container_width=True, key="checkout_mode"):
+                st.session_state.selected_mode = "Checkout"
+                st.rerun()
+                
+        with col3:
             if st.button("Resources", use_container_width=True, key="resources_mode"):
                 st.session_state.selected_mode = "Resources"
                 st.rerun()
 
-        with col3:  # Add this after the existing columns
-            if st.button("Checkout", use_container_width=True, key="checkout_mode"):
-                st.session_state.selected_mode = "Checkout"
-                st.rerun()
+
 
         if st.session_state.selected_mode:
             add_back_button()
