@@ -17,34 +17,6 @@ import pytz
 import time
 import pandas as pd
 
-from streamlit_js_eval import streamlit_js_eval
-
-def set_login_cookie(employee_name):
-    max_age = 7 * 24 * 60 * 60  
-    js = f"""
-      document.cookie = `login={employee_name}; path=/; max-age={max_age}`;
-    """
-    streamlit_js_eval(js_expressions=js, key="set_login_cookie")
-
-def read_login_cookie():
-    result = streamlit_js_eval(
-        js_expressions="""
-        (() => {
-          const cookies = document.cookie.split(";").reduce((acc, c) => {
-            const [k, v] = c.trim().split("=");
-            acc[k] = v;
-            return acc;
-          }, {});
-          return cookies.login || null;
-        })()
-        """,
-        key="read_login"
-    ) or None
-    return result
-
-def clear_login_cookie():
-    js = "document.cookie = 'login=; path=/; max-age=0';"
-    streamlit_js_eval(js_expressions=js, key="clear_login")
 
 
 def log_location_history(conn, employee_name, lat, lng):
@@ -306,13 +278,13 @@ ATTENDANCE_SHEET_COLUMNS = [
     "Designation",
     "Date",
     "Status",
-    "Location Link",
+    "Check-in Location Link",
+    "Check-out Location Link",
     "Leave Reason",
     "Check-in Time",
-    "Check-in Date Time",
     "Check-out Time",
-    "Check-out Date Time",
-    "Working Hours"
+    "Duration (hours)",
+    "Check-in Date Time"
 ]
 
 # Add these constants at the top of app.py with other constants
@@ -1501,9 +1473,12 @@ def record_attendance(employee_name, status, location_link="", leave_reason=""):
             "Designation": designation,
             "Date": current_date,
             "Status": status,
-            "Location Link": location_link,
+            "Check-in Location Link": location_link,
+            "Check-out Location Link": "",
             "Leave Reason": leave_reason,
             "Check-in Time": check_in_time,
+            "Check-out Time": "",
+            "Duration (hours)": "",
             "Check-in Date Time": current_datetime
         }
         
@@ -1548,6 +1523,104 @@ def authenticate_employee(employee_name, passkey):
     except:
         return False
 
+def checkout_page():
+    hourly_location_auto_log(conn, st.session_state.employee_name)
+    st.title("Checkout Management")
+    selected_employee = st.session_state.employee_name
+
+    # Check if user has checked in today
+    try:
+        existing_data = conn.read(worksheet="Attendance", usecols=list(range(len(ATTENDANCE_SHEET_COLUMNS))), ttl=5)
+        existing_data = existing_data.dropna(how="all")
+        
+        if existing_data.empty:
+            st.error("Please check in first before checking out")
+            return
+        
+        current_date = get_ist_time().strftime("%d-%m-%Y")
+        employee_code = Person[Person['Employee Name'] == selected_employee]['Employee Code'].values[0]
+        
+        checkin_records = existing_data[
+            (existing_data['Employee Code'] == employee_code) & 
+            (existing_data['Date'] == current_date)
+        ]
+        
+        if checkin_records.empty:
+            st.error("Please check in first before checking out")
+            return
+            
+        if 'Check-out Time' in checkin_records.columns and not checkin_records['Check-out Time'].isna().all():
+            st.warning("You have already checked out for today")
+            return
+    except Exception as e:
+        st.error(f"Error checking attendance records: {str(e)}")
+        return
+
+    st.subheader("Location Verification (Auto)")
+
+    result = streamlit_js_eval(
+        js_expressions="""
+            new Promise((resolve) => {
+                if (navigator.geolocation) {
+                    navigator.geolocation.getCurrentPosition(
+                        pos => resolve({latitude: pos.coords.latitude, longitude: pos.coords.longitude}),
+                        err => resolve({latitude: null, longitude: null})
+                    );
+                } else {
+                    resolve({latitude: null, longitude: null});
+                }
+            });
+        """,
+        key="geo_checkout"
+    ) or {}
+
+    lat = result.get("latitude")
+    lng = result.get("longitude")
+
+    if lat and lng:
+        gmaps_link = f"https://maps.google.com/?q={lat},{lng}"
+        st.success(f"Fetched Location: [View on Google Maps]({gmaps_link})")
+    else:
+        gmaps_link = ""
+        st.info("Waiting for location permission...")
+
+    if lat and lng and st.button("Check Out", key="checkout_button"):
+        with st.spinner("Recording checkout..."):
+            try:
+                # Update the existing attendance record
+                existing_data = conn.read(worksheet="Attendance", ttl=5)
+                existing_data = existing_data.dropna(how="all")
+                
+                current_date = get_ist_time().strftime("%d-%m-%Y")
+                employee_code = Person[Person['Employee Name'] == selected_employee]['Employee Code'].values[0]
+                
+                # Find the record to update
+                mask = (
+                    (existing_data['Employee Code'] == employee_code) & 
+                    (existing_data['Date'] == current_date)
+                )
+                
+                if not mask.any():
+                    st.error("No check-in record found for today")
+                    return
+                
+                # Update the record
+                existing_data.loc[mask, 'Check-out Time'] = get_ist_time().strftime("%H:%M:%S")
+                existing_data.loc[mask, 'Check-out Location Link'] = gmaps_link
+                
+                # Calculate duration
+                checkin_time = pd.to_datetime(existing_data.loc[mask, 'Check-in Time'].iloc[0])
+                checkout_time = pd.to_datetime(get_ist_time().strftime("%H:%M:%S"))
+                duration = (checkout_time - checkin_time).total_seconds() / 3600  # in hours
+                existing_data.loc[mask, 'Duration (hours)'] = round(duration, 2)
+                
+                # Write back to sheet
+                conn.update(worksheet="Attendance", data=existing_data)
+                st.success("Checkout recorded successfully!")
+                st.balloons()
+            except Exception as e:
+                st.error(f"Failed to record checkout: {str(e)}")
+
 def resources_page():
     hourly_location_auto_log(conn, st.session_state.employee_name)
     st.title("Company Resources")
@@ -1572,6 +1645,7 @@ def resources_page():
         }
     ]
     
+    # Display each resource in a card-like format
     for resource in resources:
         with st.container():
             st.subheader(resource["name"])
@@ -1590,7 +1664,7 @@ def resources_page():
             else:
                 st.error(f"File not found: {resource['file_path']}")
             
-            st.markdown("---")
+            st.markdown("---")  # Divider between resources
 
 def add_back_button():
     st.markdown("""
@@ -1610,7 +1684,6 @@ def add_back_button():
         st.rerun()
 
 def main():
-    # Initialize session state
     if 'authenticated' not in st.session_state:
         st.session_state.authenticated = False
     if 'selected_mode' not in st.session_state:
@@ -1618,88 +1691,104 @@ def main():
     if 'employee_name' not in st.session_state:
         st.session_state.employee_name = None
 
-    # Attempt auto-login via cookie
     if not st.session_state.authenticated:
-        saved_user = read_login_cookie()
-        if saved_user:
-            st.session_state.authenticated = True
-            st.session_state.employee_name = saved_user
-
-    # Authentication flow
-    if not st.session_state.authenticated:
+        # Display the centered logo and heading
         display_login_header()
+
         employee_names = Person['Employee Name'].tolist()
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            name = st.selectbox("Select Your Name", employee_names, key="employee_select")
-            passkey = st.text_input(
-                "Enter Your Employee Code", type="password", key="passkey_input"
-            )
-            if st.button("Log in", key="login_button"):
-                if authenticate_employee(name, passkey):
-                    # Persist login in cookie
-                    set_login_cookie(name)
-                    # Log initial location
-                    result = streamlit_js_eval(
-                        js_expressions="""
-                            new Promise((resolve) => {
-                                if (navigator.geolocation) {
-                                    navigator.geolocation.getCurrentPosition(
-                                        pos => resolve({latitude: pos.coords.latitude, longitude: pos.coords.longitude}),
-                                        err => resolve({latitude: null, longitude: null})
-                                    );
-                                } else {
-                                    resolve({latitude: null, longitude: null});
-                                }
-                            });
-                        """, key=f"geo_login_{name}_{int(time.time())}"
-                    ) or {}
-                    lat = result.get("latitude")
-                    lng = result.get("longitude")
-                    if lat and lng:
-                        log_location_history(conn, name, lat, lng)
-                        gmaps_link = f"https://maps.google.com/?q={lat},{lng}"
-                        st.success(f"Login location logged: [View on Google Maps]({gmaps_link})")
-                        time.sleep(1.5)
-                    st.session_state.authenticated = True
-                    st.session_state.employee_name = name
-                    st.rerun()
-                else:
-                    st.error("Invalid Password. Please try again.")
+
+        # Create centered form
+        form_col1, form_col2, form_col3 = st.columns([1, 2, 1])
+
+        with form_col2:
+            with st.container():
+                employee_name = st.selectbox(
+                    "Select Your Name", 
+                    employee_names, 
+                    key="employee_select"
+                )
+                passkey = st.text_input(
+                    "Enter Your Employee Code", 
+                    type="password", 
+                    key="passkey_input"
+                )
+
+                login_button = st.button(
+                    "Log in", 
+                    key="login_button",
+                    use_container_width=True
+                )
+
+                if login_button:
+                    if authenticate_employee(employee_name, passkey):
+                        # Immediately fetch and log location after login
+                        result = streamlit_js_eval(
+                            js_expressions="""
+                                new Promise((resolve) => {
+                                    if (navigator.geolocation) {
+                                        navigator.geolocation.getCurrentPosition(
+                                            pos => resolve({latitude: pos.coords.latitude, longitude: pos.coords.longitude}),
+                                            err => resolve({latitude: null, longitude: null})
+                                        );
+                                    } else {
+                                        resolve({latitude: null, longitude: null});
+                                    }
+                                });
+                            """,
+                            key=f"geo_login_{employee_name}_{int(time.time())}"
+                        ) or {}
+
+                        lat = result.get("latitude")
+                        lng = result.get("longitude")
+                        if lat and lng:
+                            log_location_history(conn, employee_name, lat, lng)
+                            gmaps_link = f"https://maps.google.com/?q={lat},{lng}"
+                            st.success(f"Login location logged: [View on Google Maps]({gmaps_link})")
+                            # Brief pause for user to see the message
+                            time.sleep(1.5)
+                        st.session_state.authenticated = True
+                        st.session_state.employee_name = employee_name
+                        st.rerun()
+                    else:
+                        st.error("Invalid Password. Please try again.")
     else:
-        # Post-login UI
+        # Show option boxes after login
         st.title("Select Mode")
-        cols = st.columns(7)
-        modes = ["Sales", "Visit", "Attendance", "Resources", "Support Ticket", "Travel/Hotel", "Demo"]
-        for idx, mode in enumerate(modes):
-            if cols[idx].button(mode, use_container_width=True, key=f"mode_{mode}"):
-                st.session_state.selected_mode = mode
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            if st.button("Attendance", use_container_width=True, key="attendance_mode"):
+                st.session_state.selected_mode = "Attendance"
                 st.rerun()
 
-        # Logout button
-        if st.button("← Logout", key="logout_button"):
-            st.session_state.authenticated = False
-            st.session_state.employee_name = None
-            clear_login_cookie()
-            st.rerun()
+        with col2:
+            if st.button("Resources", use_container_width=True, key="resources_mode"):
+                st.session_state.selected_mode = "Resources"
+                st.rerun()
 
-        # Navigate to selected page
+        with col3:  # Add this after the existing columns
+            if st.button("Checkout", use_container_width=True, key="checkout_mode"):
+                st.session_state.selected_mode = "Checkout"
+                st.rerun()
+
         if st.session_state.selected_mode:
             add_back_button()
-            mode = st.session_state.selected_mode
-            if mode == "Sales":
+
+            if st.session_state.selected_mode == "Sales":
                 sales_page()
-            elif mode == "Visit":
+            elif st.session_state.selected_mode == "Visit":
                 visit_page()
-            elif mode == "Attendance":
+            elif st.session_state.selected_mode == "Attendance":
                 attendance_page()
-            elif mode == "Resources":
+            elif st.session_state.selected_mode == "Resources":
                 resources_page()
-            elif mode == "Support Ticket":
+            elif st.session_state.selected_mode == "Checkout":
+                checkout_page()
+            elif st.session_state.selected_mode == "Support Ticket":
                 support_ticket_page()
-            elif mode == "Travel/Hotel":
+            elif st.session_state.selected_mode == "Travel/Hotel":
                 travel_hotel_page()
-            elif mode == "Demo":
+            elif st.session_state.selected_mode == "Demo":
                 demo_page()
 
 
@@ -1860,7 +1949,7 @@ def sales_page():
                     invoice_number, transaction_type,
                     distributor_firm_name, distributor_id, distributor_contact_person,
                     distributor_contact_number, distributor_email, distributor_territory,
-                    "",
+                    "",  # remarks
                 )
                 with open(pdf_path, "rb") as f:
                     st.download_button(
@@ -1885,23 +1974,29 @@ def sales_page():
                 sales_data = conn.read(worksheet="Sales", ttl=5)
                 sales_data = sales_data.dropna(how='all')
                 
+                # Convert columns to proper types
                 sales_data = sales_data.copy()
                 sales_data['Outlet Name'] = sales_data['Outlet Name'].astype(str)
                 sales_data['Invoice Number'] = sales_data['Invoice Number'].astype(str)
                 
+                # Convert Invoice Date properly
                 try:
                     sales_data['Invoice Date'] = pd.to_datetime(sales_data['Invoice Date'], dayfirst=True, errors='coerce')
                 except:
+                    # Fallback if date parsing fails
                     sales_data['Invoice Date'] = pd.to_datetime(sales_data['Invoice Date'], errors='coerce')
                 
+                # Convert numeric columns properly
                 numeric_cols = ['Grand Total', 'Unit Price', 'Total Price', 'Product Discount (%)', 'Quantity']
                 for col in numeric_cols:
                     if col in sales_data.columns:
                         sales_data[col] = pd.to_numeric(sales_data[col], errors='coerce')
                 
+                # Filter for current employee
                 employee_code = Person[Person['Employee Name'] == st.session_state.employee_name]['Employee Code'].values[0]
                 filtered_data = sales_data[sales_data['Employee Code'] == employee_code]
                 
+                # Ensure we have valid dates
                 filtered_data = filtered_data[filtered_data['Invoice Date'].notna()]
                 
                 return filtered_data
@@ -1929,6 +2024,7 @@ def sales_page():
         
         filtered_data = sales_data.copy()
         
+        # Apply filters
         if invoice_number_search:
             filtered_data = filtered_data[
                 filtered_data['Invoice Number'].str.contains(invoice_number_search, case=False, na=False)
@@ -1949,6 +2045,7 @@ def sales_page():
             st.warning("No matching records found")
             return
             
+        # Calculate correct grand total by invoice
         invoice_summary = filtered_data.groupby('Invoice Number').agg({
             'Invoice Date': 'first',
             'Outlet Name': 'first',
@@ -1957,10 +2054,12 @@ def sales_page():
             'Delivery Status': 'first'
         }).reset_index()
         
+        # Sort by date descending
         invoice_summary = invoice_summary.sort_values('Invoice Date', ascending=False)
         
         st.write(f"📄 Showing {len(invoice_summary)} of your invoices")
         
+        # Display the summary table
         st.dataframe(
             invoice_summary,
             column_config={
@@ -1983,12 +2082,16 @@ def sales_page():
             key="invoice_selection"
         )
         
+        # Delivery Status Section
         st.subheader("Delivery Status Management")
         
+        # Get all products for the selected invoice
         invoice_details = filtered_data[filtered_data['Invoice Number'] == selected_invoice]
         
         if not invoice_details.empty:
+            # Create a form for delivery status updates
             with st.form(key='delivery_status_form'):
+                # Get current status for the invoice
                 current_status = invoice_details.iloc[0].get('Delivery Status', 'Pending')
                 
                 status_options = ["Pending", "Order Done", "Delivery Done", "Cancelled"]
@@ -1999,17 +2102,22 @@ def sales_page():
                     key=f"status_{selected_invoice}"
                 )
 
+                
+                # Submit button for the form
                 submitted = st.form_submit_button("Update Status")
                 
                 if submitted:
                     with st.spinner("Updating delivery status..."):
                         try:
+                            # Get all sales data
                             all_sales_data = conn.read(worksheet="Sales", ttl=5)
                             all_sales_data = all_sales_data.dropna(how='all')
                             
+                            # Update the status for all rows with this invoice number
                             mask = all_sales_data['Invoice Number'] == selected_invoice
                             all_sales_data.loc[mask, 'Delivery Status'] = new_status
                             
+                            # Write back the updated data
                             conn.update(worksheet="Sales", data=all_sales_data)
                             
                             st.success(f"Delivery status updated to '{new_status}' for invoice {selected_invoice}!")
@@ -2017,6 +2125,7 @@ def sales_page():
                         except Exception as e:
                             st.error(f"Error updating delivery status: {e}")
         
+        # Display invoice details
         if not invoice_details.empty:
             invoice_data = invoice_details.iloc[0]
             original_invoice_date = invoice_data['Invoice Date'].strftime('%d-%m-%Y')
@@ -2109,6 +2218,7 @@ def visit_page():
     st.title("Visit Management")
     selected_employee = st.session_state.employee_name
 
+    # Empty remarks since we removed the location input
     visit_remarks = ""
 
     tab1, tab2 = st.tabs(["New Visit", "Visit History"])
@@ -2128,6 +2238,7 @@ def visit_page():
             outlet_state = outlet_details['State']
             outlet_city = outlet_details['City']
             
+            # Show outlet details like distributor details
             st.text_input("Outlet Contact", value=outlet_contact, disabled=True, key="outlet_contact_display")
             st.text_input("Outlet Address", value=outlet_address, disabled=True, key="outlet_address_display")
             st.text_input("Outlet State", value=outlet_state, disabled=True, key="outlet_state_display")
@@ -2203,12 +2314,14 @@ def visit_page():
                     filtered_data = filtered_data[filtered_data['Outlet Name'].str.contains(outlet_name_search, case=False)]
                 
                 if not filtered_data.empty:
+                    # Display only the most relevant columns
                     display_columns = [
                         'Visit ID', 'Visit Date', 'Outlet Name', 'Visit Purpose', 'Visit Notes',
                         'Entry Time', 'Exit Time', 'Visit Duration (minutes)', 'Remarks'
                     ]
                     st.dataframe(filtered_data[display_columns])
                     
+                    # Add download option
                     csv = filtered_data.to_csv(index=False).encode('utf-8')
                     st.download_button(
                         "Download as CSV",
